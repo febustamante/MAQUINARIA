@@ -642,7 +642,7 @@ async function borrarGasto(id){
 /* PARTE DIARIO */
 document.getElementById('pMaq').innerHTML=DB.paraParte
   .sort((a,b)=>a.maq.localeCompare(b.maq,undefined,{numeric:true}))
-  .map(m=>`<option value="${m.maq}">${m.maq} · ${m.marca} ${m.modelo} · ${m.comb_tipo||''}</option>`).join('');
+  .map(m=>`<option value="${m.maq}">${m.maq} · ${m.marca} ${m.modelo}${m.patente?' · '+m.patente:''} · ${m.comb_tipo||''}</option>`).join('');
 document.getElementById('pOper').innerHTML='<option value="">— Selecciona operador —</option>'+
   DB.operadores.slice().sort((a,b)=>a.localeCompare(b)).map(o=>`<option value="${o}">${o}</option>`).join('');
 document.getElementById('pFalla').onchange=e=>document.getElementById('fallaBox').classList.toggle('hidden',!e.target.checked);
