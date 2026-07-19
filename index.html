@@ -175,6 +175,7 @@
   <div class="tabs">
     <div class="tab act" data-v="parte">Parte diario</div>
     <div class="tab tab-ger" data-v="maq">Máquinas · costos y uso</div>
+    <div class="tab tab-ger" data-v="control">Control diario</div>
     <div class="tab tab-ger" data-v="gastos">Gastos</div>
     <div class="tab tab-ger" data-v="fijos">Gastos fijos</div>
   </div>
@@ -237,6 +238,16 @@
     <div class="stitle">Máquinas · costos y uso</div>
     <div class="filtros" id="filtros"></div>
     <div class="tbl-wrap"><table class="tbl-maq" id="tblMaq"><thead></thead><tbody></tbody></table></div>
+  </div>
+
+  <!-- CONTROL DIARIO -->
+  <div class="view" id="v-control">
+    <div class="stitle">Fallas reportadas</div>
+    <div id="listaFallas"></div>
+    <div class="stitle">Sin informar hoy · máquinas operativas</div>
+    <div class="card" style="max-width:none">
+      <div id="listaSinInformar"></div>
+    </div>
   </div>
 
   <!-- GASTOS -->
@@ -379,6 +390,26 @@ async function cargarGastosSupabase(){
   }catch(e){console.warn('Fallo cargando gastos:',e);return false;}
 }
 
+/* Lee los partes diarios desde Supabase */
+async function cargarPartesSupabase(){
+  if(!sb) return false;
+  try{
+    const {data,error}=await sb.from('maq_partes').select('*').order('fecha',{ascending:false});
+    if(error){console.warn('Error leyendo maq_partes:',error.message);return false;}
+    if(!data) return false;
+    DB.partes=data.map(p=>({
+      id:p.id, maq:p.maq, fecha:p.fecha, operador:p.operador,
+      hi:p.horo_inicio!=null?Number(p.horo_inicio):null,
+      ht:p.horo_termino!=null?Number(p.horo_termino):null,
+      lts:p.litros!=null?Number(p.litros):null,
+      chk:{aceite:p.chk_aceite,refri:p.chk_refri,hidr:p.chk_hidr,neum:p.chk_neum,fugas:p.chk_fugas,engrase:p.chk_engrase},
+      falla:p.falla, desc:p.falla_desc, foto:p.foto_url, falla_resuelta:p.falla_resuelta||false
+    }));
+    console.log('✓ '+data.length+' partes cargados desde Supabase');
+    return true;
+  }catch(e){console.warn('Fallo cargando partes:',e);return false;}
+}
+
 /* util */
 const HOY=new Date();HOY.setHours(0,0,0,0);
 const fmt=n=>new Intl.NumberFormat('es-CL').format(Math.round(n));
@@ -398,9 +429,10 @@ async function entrar(){
   else if(pin===DB.acceso.operador){ROL='operador';}
   else{msg.className='msg err';msg.textContent='PIN incorrecto';return;}
   msg.className='msg';msg.textContent='Conectando...';
-  // leer máquinas y gastos actualizados desde Supabase
+  // leer datos actualizados desde Supabase
   await cargarMaquinasSupabase();
   await cargarGastosSupabase();
+  await cargarPartesSupabase();
   document.getElementById('login').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   aplicarRol();
@@ -453,8 +485,63 @@ document.querySelectorAll('.tab').forEach(t=>{
     if(t.dataset.v==='maq'){renderPrecios();renderAlertas();renderKpisGen();renderTabla();}
     if(t.dataset.v==='fijos')renderFijos();
     if(t.dataset.v==='gastos')initGastos();
+    if(t.dataset.v==='control')renderControl();
   };
 });
+
+/* ===== PESTAÑA CONTROL DIARIO ===== */
+function renderControl(){
+  // --- Fallas reportadas (no resueltas arriba, resueltas abajo atenuadas) ---
+  const fallas=DB.partes.filter(p=>p.falla).sort((a,b)=>b.fecha.localeCompare(a.fecha));
+  const cont=document.getElementById('listaFallas');
+  if(!fallas.length){
+    cont.innerHTML='<div class="card" style="max-width:none"><div class="no-uso">Sin fallas reportadas.</div></div>';
+  }else{
+    cont.innerHTML='<div class="card" style="max-width:none"><table class="tbl-maq" style="min-width:auto"><thead><tr>'+
+      '<th></th><th>Fecha</th><th>Máquina</th><th>Operador</th><th>Falla</th><th></th></tr></thead><tbody>'+
+      fallas.map(p=>{
+        const m=DB.maquinas.find(x=>x.maq===p.maq);
+        const nombre=m?m.resp:p.maq;
+        const resuelta=p.falla_resuelta;
+        const dot=resuelta?'<span class="semaf d-verde"></span>':'<span class="semaf d-rojo"></span>';
+        const accion=resuelta
+          ? '<span class="mini" style="color:var(--verde)">resuelta</span>'
+          : `<span class="btn-borrar" style="color:var(--verde);border-color:var(--verde)" onclick="resolverFalla('${p.id}')">marcar resuelta</span>`;
+        const foto=p.foto?`<br><img class="foto-mini" src="${p.foto}" onclick="window.open('').document.write('<img src=\\''+this.src+'\\' style=max-width:100%>')">`:'';
+        return `<tr style="${resuelta?'opacity:.55':''}">
+          <td>${dot}</td><td>${p.fecha}</td><td><b>${p.maq}</b><br><span class="mini">${nombre}</span></td>
+          <td>${p.operador}</td>
+          <td><span style="color:var(--rojo)">${p.desc||'—'}</span>${foto}</td>
+          <td>${accion}</td></tr>`;
+      }).join('')+'</tbody></table></div>';
+  }
+
+  // --- Sin informar hoy: operativas que no cargaron parte hoy ---
+  const hoy=hoyISO();
+  const conParteHoy=new Set(DB.partes.filter(p=>p.fecha===hoy).map(p=>p.maq));
+  const operativas=DB.maquinas.filter(m=>m.estado==='OPERATIVA');
+  const sinInformar=operativas.filter(m=>!conParteHoy.has(m.maq));
+  const cont2=document.getElementById('listaSinInformar');
+  if(!sinInformar.length){
+    cont2.innerHTML='<div class="no-uso">Todas las máquinas operativas cargaron parte hoy. ✓</div>';
+  }else{
+    cont2.innerHTML='<div class="mini" style="margin-bottom:8px">'+sinInformar.length+' de '+operativas.length+' máquinas operativas aún no cargan parte hoy ('+hoy+'):</div>'+
+      '<table class="tbl-maq" style="min-width:auto"><thead><tr><th>Máquina</th><th>Responsable</th><th>Ubicación</th><th>Tipo</th></tr></thead><tbody>'+
+      sinInformar.map(m=>`<tr><td><b>${m.maq}</b></td><td>${m.resp}</td><td>${m.ubic}</td><td>${m.tipo}</td></tr>`).join('')+
+      '</tbody></table>';
+  }
+}
+async function resolverFalla(id){
+  const p=DB.partes.find(x=>String(x.id)===String(id));
+  if(!p)return;
+  if(!confirm('¿Marcar esta falla como resuelta?\n'+p.maq+' · '+(p.desc||'')))return;
+  if(sb){
+    const {error}=await sb.from('maq_partes').update({falla_resuelta:true}).eq('id',p.id);
+    if(error){alert('Error: '+error.message);return;}
+  }
+  p.falla_resuelta=true;
+  renderControl();
+}
 
 /* ===== PESTAÑA GASTOS ===== */
 const MOTIVOS_FRECUENTES=['MANTENCIÓN COMPLETA','REVISION TECNICA','GASES Y CONTAMINANTES','PERMISO DE CIRCULACION','POLIZA DE SEGURO','GPS','BATERIA','FILTRO ACEITE MOTOR','FILTRO DE AIRE','FILTRO COMBUSTIBLE','ACEITE MOTOR','NEUMÁTICOS','FRENOS','TRASLADO SERVICIO'];
@@ -523,11 +610,15 @@ function renderGastosRecientes(){
     recientes.map(g=>`<tr><td>${g.fecha}</td><td><b>${g.maq}</b></td><td>${g.motivo}</td><td>${g.factura||'—'}</td><td class="num">${CLP(g.monto)}</td><td><span class="btn-borrar" onclick="borrarGasto('${g.id}')">borrar</span></td></tr>`).join('')+
     `</tbody></table>`;
 }
-function borrarParte(id){
+async function borrarParte(id){
   const i=DB.partes.findIndex(p=>String(p.id)===String(id));
   if(i<0)return;
   const p=DB.partes[i];
   if(!confirm('¿Borrar este parte?\n'+p.maq+' · '+p.fecha+' · '+p.operador+'\nEsta acción no se puede deshacer.'))return;
+  if(sb){
+    const {error}=await sb.from('maq_partes').delete().eq('id',p.id);
+    if(error){alert('Error al borrar: '+error.message);return;}
+  }
   DB.partes.splice(i,1);
   renderTabla();renderKpisGen();
 }
@@ -562,7 +653,7 @@ document.getElementById('pFoto').onchange=e=>{
   r.onload=ev=>{fotoData=ev.target.result;const img=document.getElementById('fotoPrev');img.src=fotoData;img.style.display='block';document.getElementById('fotoInfo').textContent=f.name+' · '+Math.round(f.size/1024)+' KB';};
   r.readAsDataURL(f);
 };
-document.getElementById('btnGuardar').onclick=()=>{
+document.getElementById('btnGuardar').onclick=async()=>{
   const msg=document.getElementById('msgParte');
   const maq=document.getElementById('pMaq').value, oper=document.getElementById('pOper').value.trim();
   const hi=parseFloat(document.getElementById('pHi').value), ht=parseFloat(document.getElementById('pHt').value);
@@ -572,7 +663,6 @@ document.getElementById('btnGuardar').onclick=()=>{
   if(!oper){msg.className='msg err';msg.textContent='Indica el operador';return;}
   if(isNaN(hi)||isNaN(ht)){msg.className='msg err';msg.textContent='Ingresa horómetro de inicio y término';return;}
   if(ht<hi){msg.className='msg err';msg.textContent='El horómetro de término no puede ser menor al de inicio';return;}
-  // validar contra el horómetro más alto ya registrado para esta máquina
   const ultHoro=horometroActual(maq);
   if(ultHoro!==null && hi<ultHoro){
     msg.className='msg err';
@@ -580,9 +670,21 @@ document.getElementById('btnGuardar').onclick=()=>{
     return;
   }
   if(falla&&!desc){msg.className='msg err';msg.textContent='Describe la falla antes de guardar';return;}
-  DB.partes.unshift({id:Date.now(),fecha:hoyISO(),operador:oper,maq:maq,hi:hi,ht:ht,lts:lts,
-    chk:{aceite:c_aceite.checked,refri:c_refri.checked,hidr:c_hidr.checked,neum:c_neum.checked,fugas:c_fugas.checked,engrase:c_engrase.checked},
-    falla:falla,desc:falla?desc:null,foto:falla?fotoData:null});
+
+  const chk={aceite:c_aceite.checked,refri:c_refri.checked,hidr:c_hidr.checked,neum:c_neum.checked,fugas:c_fugas.checked,engrase:c_engrase.checked};
+  msg.className='msg';msg.textContent='Guardando...';
+  let nuevoId=Date.now();
+  if(sb){
+    const {data,error}=await sb.from('maq_partes').insert({
+      maq:maq, fecha:hoyISO(), operador:oper, horo_inicio:hi, horo_termino:ht, litros:lts,
+      chk_aceite:chk.aceite, chk_refri:chk.refri, chk_hidr:chk.hidr, chk_neum:chk.neum, chk_fugas:chk.fugas, chk_engrase:chk.engrase,
+      falla:falla, falla_desc:falla?desc:null, foto_url:falla?fotoData:null
+    }).select().single();
+    if(error){msg.className='msg err';msg.textContent='Error al guardar: '+error.message;return;}
+    if(data)nuevoId=data.id;
+  }
+  DB.partes.unshift({id:nuevoId,fecha:hoyISO(),operador:oper,maq:maq,hi:hi,ht:ht,lts:lts,
+    chk:chk, falla:falla,desc:falla?desc:null,foto:falla?fotoData:null});
   msg.className='msg ok';
   msg.textContent='✓ Parte guardado'+(falla?'. ⚠ Se notificará al supervisor por la falla reportada.':'. Ya aparece en la máquina '+maq);
   ['pHi','pHt','pLts','pDesc','pOper'].forEach(id=>document.getElementById(id).value='');
