@@ -220,6 +220,11 @@
     </div>
     <button class="btn" id="btnGuardar">Guardar parte del día</button>
     <div id="msgParte" class="msg"></div>
+
+    <div class="stitle">Registro de hoy</div>
+    <div class="card" style="max-width:560px">
+      <div id="registroHoy"></div>
+    </div>
   </div>
 
   <!-- MÁQUINAS -->
@@ -253,6 +258,12 @@
     </div>
     <div class="stitle">Resumen por día</div>
     <div class="card" style="max-width:none">
+      <div class="filtros" style="margin-bottom:14px;align-items:flex-end">
+        <div><label style="margin:0 0 4px">Desde</label><input type="date" id="rangoDesde" style="width:auto"></div>
+        <div><label style="margin:0 0 4px">Hasta</label><input type="date" id="rangoHasta" style="width:auto"></div>
+        <button class="filtros-btn" onclick="buscarRango()" style="border:1px solid var(--pizarra);background:var(--pizarra);color:#fff;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">Buscar</button>
+        <button onclick="limpiarRango()" style="border:1px solid var(--linea);background:#fff;color:var(--pizarra);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px">Ver últimos 7 días</button>
+      </div>
       <div id="resumenDiario"></div>
     </div>
   </div>
@@ -297,6 +308,28 @@
     Cambio de aceite: tractores por horas de motor (horómetro de los partes), camionetas por kilómetros. Estructura lista para Supabase.
   </footer>
   </div><!-- fin #app -->
+</div>
+
+<!-- MODAL editar parte (solo gerencia) -->
+<div class="modal-bg" id="modalParte">
+  <div class="modal">
+    <h3>Editar parte</h3>
+    <div class="msub" id="epSub"></div>
+    <div class="grid2">
+      <div><label>Horómetro inicio</label><input type="number" id="epHi"></div>
+      <div><label>Horómetro término</label><input type="number" id="epHt"></div>
+    </div>
+    <label>Litros cargados</label>
+    <input type="number" id="epLts" placeholder="vacío si no se midió">
+    <label>Operador</label>
+    <input id="epOper">
+    <div class="chk-row" style="border:none;margin-top:8px"><span>¿Tuvo falla?</span><label class="switch"><input type="checkbox" id="epFalla" onchange="document.getElementById('epDescBox').style.display=this.checked?'block':'none'"><span class="slider"></span></label></div>
+    <div id="epDescBox" style="display:none"><label>Descripción de la falla</label><textarea id="epDesc" rows="2"></textarea></div>
+    <div class="modal-btns">
+      <button class="mb-cancel" onclick="document.getElementById('modalParte').classList.remove('act')">Cancelar</button>
+      <button class="mb-save" onclick="guardarEdicionParte()">Guardar cambios</button>
+    </div>
+  </div>
 </div>
 
 <!-- MODAL editar fechas --><div class="modal-bg" id="modalFecha">
@@ -528,6 +561,7 @@ function aplicarRol(){
     document.querySelector('.tab[data-v="parte"]').classList.add('act');
     document.getElementById('v-parte').classList.add('act');
   }
+  renderRegistroHoy();
 }
 document.getElementById('pinInput').addEventListener('keypress',e=>{if(e.key==='Enter')entrar();});
 function nivelDias(d){if(d===null)return null;if(d<0)return'rojo';if(d<=30)return'ambar';return'verde';}
@@ -632,29 +666,95 @@ async function marcarNoUso(cod){
 }
 
 /* Resumen por día: informadas / no usadas / pendientes / fallas */
+function maquinasPendientesDe(fecha){
+  const codsQueInforman=new Set(DB.paraParte.map(x=>x.maq));
+  const conParte=new Set(DB.partes.filter(p=>p.fecha===fecha).map(p=>p.maq));
+  const noUso=new Set(DB.sinUso.filter(s=>s.fecha===fecha).map(s=>s.maq));
+  return DB.maquinas.filter(m=>codsQueInforman.has(m.maq)&&m.estado==='OPERATIVA'&&!conParte.has(m.maq)&&!noUso.has(m.maq));
+}
+let diaExpandido=null;
+function togglePendientes(f){ diaExpandido=diaExpandido===f?null:f; renderResumenDiario(); }
+let rangoActivo=null; // {desde, hasta} o null
+function buscarRango(){
+  const d=document.getElementById('rangoDesde').value, h=document.getElementById('rangoHasta').value;
+  if(!d||!h){alert('Elige ambas fechas: desde y hasta');return;}
+  if(d>h){alert('La fecha "desde" no puede ser mayor que "hasta"');return;}
+  rangoActivo={desde:d,hasta:h};
+  diaExpandido=null;
+  renderResumenDiario();
+}
+function limpiarRango(){
+  rangoActivo=null;
+  document.getElementById('rangoDesde').value='';
+  document.getElementById('rangoHasta').value='';
+  diaExpandido=null;
+  renderResumenDiario();
+}
 function renderResumenDiario(){
   const cont=document.getElementById('resumenDiario');
   if(!cont)return;
   const codsQueInforman=new Set(DB.paraParte.map(x=>x.maq));
   const totalDeben=DB.maquinas.filter(m=>codsQueInforman.has(m.maq)&&m.estado==='OPERATIVA').length;
-  // juntar todas las fechas con actividad (partes o marcas de no-uso)
-  const fechas=new Set();
-  DB.partes.forEach(p=>fechas.add(p.fecha));
-  DB.sinUso.forEach(s=>fechas.add(s.fecha));
-  const lista=[...fechas].sort((a,b)=>b.localeCompare(a)).slice(0,14); // últimos 14 días con datos
-  if(!lista.length){cont.innerHTML='<div class="no-uso">Aún no hay días con actividad registrada.</div>';return;}
-  cont.innerHTML='<table class="tbl-maq" style="min-width:auto"><thead><tr>'+
-    '<th>Fecha</th><th class="num">Informadas</th><th class="num">No usadas</th><th class="num">Pendientes</th><th class="num">Fallas</th></tr></thead><tbody>'+
-    lista.map(f=>{
-      const informadas=new Set(DB.partes.filter(p=>p.fecha===f).map(p=>p.maq)).size;
-      const noUsadas=DB.sinUso.filter(s=>s.fecha===f).length;
-      const fallas=DB.partes.filter(p=>p.fecha===f&&p.falla).length;
-      const pend=Math.max(0,totalDeben-informadas-noUsadas);
-      const pendColor=pend>0?'style="color:var(--ambar);font-weight:700"':'';
-      const fallaColor=fallas>0?'style="color:var(--rojo);font-weight:700"':'';
-      return `<tr><td><b>${f}</b></td><td class="num">${informadas}</td><td class="num">${noUsadas}</td>
-        <td class="num" ${pendColor}>${pend}</td><td class="num" ${fallaColor}>${fallas}</td></tr>`;
-    }).join('')+'</tbody></table>';
+
+  // --- Panorama del MES en curso (siempre visible) ---
+  const mesActual=hoyISO().slice(0,7);
+  const partesMes=DB.partes.filter(p=>p.fecha.slice(0,7)===mesActual);
+  const noUsoMes=DB.sinUso.filter(s=>s.fecha.slice(0,7)===mesActual);
+  const fallasMes=partesMes.filter(p=>p.falla).length;
+  const diasMes=new Set([...partesMes.map(p=>p.fecha),...noUsoMes.map(s=>s.fecha)]);
+  const nombreMes=new Date(mesActual+'-01').toLocaleDateString('es-CL',{month:'long',year:'numeric'});
+  const panorama=`<div class="kpis" style="margin-bottom:14px">
+    <div class="kpi"><div class="lbl">Mes en curso</div><div class="val" style="font-size:14px;text-transform:capitalize">${nombreMes}</div><div class="foot">${diasMes.size} días con registro</div></div>
+    <div class="kpi"><div class="lbl">Partes del mes</div><div class="val">${partesMes.length}</div><div class="foot">cargados</div></div>
+    <div class="kpi"><div class="lbl">No usadas (mes)</div><div class="val">${noUsoMes.length}</div><div class="foot">marcadas</div></div>
+    <div class="kpi"><div class="lbl">Fallas del mes</div><div class="val" style="${fallasMes>0?'color:var(--rojo)':''}">${fallasMes}</div><div class="foot">reportadas</div></div>
+  </div>`;
+
+  // --- Días a mostrar: rango elegido, o últimos 7 con actividad ---
+  let lista, titulo;
+  if(rangoActivo){
+    // todos los días del rango (con o sin actividad)
+    lista=[];
+    let d=new Date(rangoActivo.desde+'T00:00:00'), fin=new Date(rangoActivo.hasta+'T00:00:00');
+    while(d<=fin){ lista.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')); d.setDate(d.getDate()+1); }
+    lista.reverse();
+    titulo=`<div class="mini" style="margin-bottom:8px">Mostrando ${rangoActivo.desde} a ${rangoActivo.hasta} (${lista.length} días)</div>`;
+  }else{
+    const fechas=new Set();
+    DB.partes.forEach(p=>fechas.add(p.fecha));
+    DB.sinUso.forEach(s=>fechas.add(s.fecha));
+    lista=[...fechas].sort((a,b)=>b.localeCompare(a)).slice(0,7);
+    titulo='<div class="mini" style="margin-bottom:8px">Últimos 7 días con actividad</div>';
+  }
+
+  let tabla;
+  if(!lista.length){
+    tabla='<div class="no-uso">Sin días para mostrar.</div>';
+  }else{
+    tabla=titulo+'<table class="tbl-maq" style="min-width:auto"><thead><tr>'+
+      '<th>Fecha</th><th class="num">Informadas</th><th class="num">No usadas</th><th class="num">Pendientes</th><th class="num">Fallas</th></tr></thead><tbody>'+
+      lista.map(f=>{
+        const informadas=new Set(DB.partes.filter(p=>p.fecha===f).map(p=>p.maq)).size;
+        const noUsadas=DB.sinUso.filter(s=>s.fecha===f).length;
+        const fallas=DB.partes.filter(p=>p.fecha===f&&p.falla).length;
+        const pend=Math.max(0,totalDeben-informadas-noUsadas);
+        const fallaColor=fallas>0?'style="color:var(--rojo);font-weight:700"':'';
+        const pendCell=pend>0
+          ? `<span class="edit-fecha" style="color:var(--ambar);border-color:var(--ambar)" onclick="togglePendientes('${f}')">${pend} ver</span>`
+          : `<span style="color:var(--verde)">0</span>`;
+        let fila=`<tr><td><b>${f}</b></td><td class="num">${informadas}</td><td class="num">${noUsadas}</td>
+          <td class="num">${pendCell}</td><td class="num" ${fallaColor}>${fallas}</td></tr>`;
+        if(diaExpandido===f){
+          const pendientes=maquinasPendientesDe(f);
+          fila+=`<tr class="expand"><td colspan="5"><div class="exp-inner" style="grid-template-columns:1fr">
+            <div class="exp-box"><h4>Pendientes del ${f} — no informaron</h4>`+
+            (pendientes.length?pendientes.map(m=>`<div class="exp-line"><span class="k">${m.maq} · ${m.resp}</span><span class="v mini">${m.ubic}</span></div>`).join(''):'<div class="no-uso">Ninguna.</div>')+
+            `</div></div></td></tr>`;
+        }
+        return fila;
+      }).join('')+'</tbody></table>';
+  }
+  cont.innerHTML=panorama+tabla;
 }
 async function resolverFalla(id){
   const p=DB.partes.find(x=>String(x.id)===String(id));
@@ -816,8 +916,70 @@ document.getElementById('btnGuardar').onclick=async()=>{
   ['c_aceite','c_refri','c_hidr','c_neum','c_fugas','c_engrase'].forEach(id=>document.getElementById(id).checked=true);
   document.getElementById('pFalla').checked=false;document.getElementById('fallaBox').classList.add('hidden');
   document.getElementById('fotoPrev').style.display='none';document.getElementById('fotoInfo').textContent='';fotoData=null;
+  renderRegistroHoy();
   setTimeout(()=>{msg.style.display='none';},4000);
 };
+
+/* ===== REGISTRO DE HOY (en el parte diario) ===== */
+function renderRegistroHoy(){
+  const cont=document.getElementById('registroHoy');
+  if(!cont)return;
+  const hoy=hoyISO();
+  const deHoy=DB.partes.filter(p=>p.fecha===hoy).sort((a,b)=>String(b.id).localeCompare(String(a.id)));
+  const esGer=ROL==='gerencia';
+  if(!deHoy.length){cont.innerHTML='<div class="no-uso">Aún no hay partes cargados hoy.</div>';return;}
+  cont.innerHTML='<table class="tbl-maq" style="min-width:auto"><thead><tr>'+
+    '<th>Máquina</th><th>Operador</th><th class="num">Horas</th><th class="num">Litros</th><th>Estado</th>'+(esGer?'<th></th>':'')+'</tr></thead><tbody>'+
+    deHoy.map(p=>{
+      const h=(typeof p.ht==='number'&&typeof p.hi==='number')?(p.ht-p.hi):null;
+      const estado=p.falla?'<span class="falla-tag">falla</span>':'✓';
+      const accion=esGer?`<td><span class="edit-fecha" onclick="editarParte('${p.id}')">editar</span></td>`:'';
+      return `<tr><td><b>${p.maq}</b></td><td>${p.operador}</td>
+        <td class="num">${h!=null?h.toFixed(1):'—'}</td><td class="num">${p.lts!=null?p.lts:'—'}</td>
+        <td>${estado}</td>${accion}</tr>`;
+    }).join('')+'</tbody></table>'+
+    (esGer?'':'<div class="mini" style="margin-top:8px">Si ves un error en tu registro, avisa a gerencia para corregirlo.</div>');
+}
+let parteEditando=null;
+function editarParte(id){
+  const p=DB.partes.find(x=>String(x.id)===String(id));
+  if(!p)return;
+  parteEditando=id;
+  document.getElementById('epSub').textContent=p.maq+' · '+p.fecha+' · '+p.operador;
+  document.getElementById('epHi').value=p.hi!=null?p.hi:'';
+  document.getElementById('epHt').value=p.ht!=null?p.ht:'';
+  document.getElementById('epLts').value=p.lts!=null?p.lts:'';
+  document.getElementById('epOper').value=p.operador||'';
+  document.getElementById('epFalla').checked=!!p.falla;
+  document.getElementById('epDesc').value=p.desc||'';
+  document.getElementById('epDescBox').style.display=p.falla?'block':'none';
+  document.getElementById('modalParte').classList.add('act');
+}
+async function guardarEdicionParte(){
+  if(!parteEditando)return;
+  const p=DB.partes.find(x=>String(x.id)===String(parteEditando));
+  const hi=parseFloat(document.getElementById('epHi').value);
+  const ht=parseFloat(document.getElementById('epHt').value);
+  const ltsRaw=document.getElementById('epLts').value.trim();
+  const lts=ltsRaw===''?null:parseFloat(ltsRaw);
+  const oper=document.getElementById('epOper').value.trim();
+  const falla=document.getElementById('epFalla').checked;
+  const desc=document.getElementById('epDesc').value.trim();
+  if(isNaN(hi)||isNaN(ht)){alert('Ingresa horómetro de inicio y término');return;}
+  if(ht<hi){alert('El término no puede ser menor al inicio');return;}
+  if(sb){
+    const {error}=await sb.from('maq_partes').update({
+      horo_inicio:hi, horo_termino:ht, litros:lts, operador:oper,
+      falla:falla, falla_desc:falla?desc:null
+    }).eq('id',p.id);
+    if(error){alert('Error: '+error.message);return;}
+  }
+  p.hi=hi; p.ht=ht; p.lts=lts; p.operador=oper; p.falla=falla; p.desc=falla?desc:null;
+  document.getElementById('modalParte').classList.remove('act');
+  parteEditando=null;
+  renderRegistroHoy();
+  if(typeof renderTabla==='function')renderTabla();
+}
 
 /* PRECIOS editables con fecha */
 function renderPrecios(){
