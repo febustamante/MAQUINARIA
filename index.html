@@ -248,6 +248,10 @@
     <div class="card" style="max-width:none">
       <div id="listaSinInformar"></div>
     </div>
+    <div class="stitle">Resumen por día</div>
+    <div class="card" style="max-width:none">
+      <div id="resumenDiario"></div>
+    </div>
   </div>
 
   <!-- GASTOS -->
@@ -410,6 +414,19 @@ async function cargarPartesSupabase(){
   }catch(e){console.warn('Fallo cargando partes:',e);return false;}
 }
 
+/* Lee las marcas de "no se usó" desde Supabase */
+DB.sinUso=[]; // {maq, fecha}
+async function cargarSinUsoSupabase(){
+  if(!sb) return false;
+  try{
+    const {data,error}=await sb.from('maq_sin_uso').select('*');
+    if(error){console.warn('Error leyendo maq_sin_uso:',error.message);return false;}
+    DB.sinUso=(data||[]).map(r=>({maq:r.maq,fecha:r.fecha}));
+    console.log('✓ '+DB.sinUso.length+' marcas de no-uso cargadas');
+    return true;
+  }catch(e){console.warn('Fallo cargando sin_uso:',e);return false;}
+}
+
 /* util */
 const HOY=new Date();HOY.setHours(0,0,0,0);
 const fmt=n=>new Intl.NumberFormat('es-CL').format(Math.round(n));
@@ -433,6 +450,7 @@ async function entrar(){
   await cargarMaquinasSupabase();
   await cargarGastosSupabase();
   await cargarPartesSupabase();
+  await cargarSinUsoSupabase();
   document.getElementById('login').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   aplicarRol();
@@ -516,20 +534,69 @@ function renderControl(){
       }).join('')+'</tbody></table></div>';
   }
 
-  // --- Sin informar hoy: operativas que no cargaron parte hoy ---
+  // --- Sin informar hoy ---
+  // Solo máquinas que DEBEN cargar parte (tractores + Saveiro = paraParte), operativas
   const hoy=hoyISO();
+  const codsQueInforman=new Set(DB.paraParte.map(x=>x.maq));
   const conParteHoy=new Set(DB.partes.filter(p=>p.fecha===hoy).map(p=>p.maq));
-  const operativas=DB.maquinas.filter(m=>m.estado==='OPERATIVA');
-  const sinInformar=operativas.filter(m=>!conParteHoy.has(m.maq));
+  const noUsoHoy=new Set(DB.sinUso.filter(s=>s.fecha===hoy).map(s=>s.maq));
+  // deben informar: están en paraParte, operativas, y no marcadas como "no se usó"
+  const debenInformar=DB.maquinas.filter(m=>
+    codsQueInforman.has(m.maq) && m.estado==='OPERATIVA'
+  );
+  const pendientes=debenInformar.filter(m=>!conParteHoy.has(m.maq) && !noUsoHoy.has(m.maq));
   const cont2=document.getElementById('listaSinInformar');
-  if(!sinInformar.length){
-    cont2.innerHTML='<div class="no-uso">Todas las máquinas operativas cargaron parte hoy. ✓</div>';
+  if(!pendientes.length){
+    cont2.innerHTML='<div class="no-uso">Día cerrado: todas las máquinas que debían informar tienen parte o están marcadas como no usadas. ✓</div>';
   }else{
-    cont2.innerHTML='<div class="mini" style="margin-bottom:8px">'+sinInformar.length+' de '+operativas.length+' máquinas operativas aún no cargan parte hoy ('+hoy+'):</div>'+
-      '<table class="tbl-maq" style="min-width:auto"><thead><tr><th>Máquina</th><th>Responsable</th><th>Ubicación</th><th>Tipo</th></tr></thead><tbody>'+
-      sinInformar.map(m=>`<tr><td><b>${m.maq}</b></td><td>${m.resp}</td><td>${m.ubic}</td><td>${m.tipo}</td></tr>`).join('')+
+    cont2.innerHTML='<div class="mini" style="margin-bottom:8px">'+pendientes.length+' máquina(s) pendiente(s) de hoy ('+hoy+'). Marca las que no se usaron para cerrar el día:</div>'+
+      '<table class="tbl-maq" style="min-width:auto"><thead><tr><th>Máquina</th><th>Responsable</th><th>Ubicación</th><th></th></tr></thead><tbody>'+
+      pendientes.map(m=>`<tr><td><b>${m.maq}</b></td><td>${m.resp}</td><td>${m.ubic}</td>
+        <td><span class="btn-borrar" style="color:var(--gris);border-color:var(--gris)" onclick="marcarNoUso('${m.maq}')">no se usó hoy</span></td></tr>`).join('')+
       '</tbody></table>';
   }
+
+  // --- Resumen diario (últimos días) ---
+  renderResumenDiario();
+}
+
+/* Marca una máquina como "no se usó hoy" */
+async function marcarNoUso(cod){
+  const hoy=hoyISO();
+  const m=DB.maquinas.find(x=>x.maq===cod);
+  if(!confirm('¿Marcar '+cod+' ('+(m?m.resp:'')+') como NO usada hoy?\nSaldrá de los pendientes del día.'))return;
+  if(sb){
+    const {error}=await sb.from('maq_sin_uso').insert({maq:cod,fecha:hoy});
+    if(error && !error.message.includes('duplicate')){alert('Error: '+error.message);return;}
+  }
+  if(!DB.sinUso.some(s=>s.maq===cod&&s.fecha===hoy))DB.sinUso.push({maq:cod,fecha:hoy});
+  renderControl();
+}
+
+/* Resumen por día: informadas / no usadas / pendientes / fallas */
+function renderResumenDiario(){
+  const cont=document.getElementById('resumenDiario');
+  if(!cont)return;
+  const codsQueInforman=new Set(DB.paraParte.map(x=>x.maq));
+  const totalDeben=DB.maquinas.filter(m=>codsQueInforman.has(m.maq)&&m.estado==='OPERATIVA').length;
+  // juntar todas las fechas con actividad (partes o marcas de no-uso)
+  const fechas=new Set();
+  DB.partes.forEach(p=>fechas.add(p.fecha));
+  DB.sinUso.forEach(s=>fechas.add(s.fecha));
+  const lista=[...fechas].sort((a,b)=>b.localeCompare(a)).slice(0,14); // últimos 14 días con datos
+  if(!lista.length){cont.innerHTML='<div class="no-uso">Aún no hay días con actividad registrada.</div>';return;}
+  cont.innerHTML='<table class="tbl-maq" style="min-width:auto"><thead><tr>'+
+    '<th>Fecha</th><th class="num">Informadas</th><th class="num">No usadas</th><th class="num">Pendientes</th><th class="num">Fallas</th></tr></thead><tbody>'+
+    lista.map(f=>{
+      const informadas=new Set(DB.partes.filter(p=>p.fecha===f).map(p=>p.maq)).size;
+      const noUsadas=DB.sinUso.filter(s=>s.fecha===f).length;
+      const fallas=DB.partes.filter(p=>p.fecha===f&&p.falla).length;
+      const pend=Math.max(0,totalDeben-informadas-noUsadas);
+      const pendColor=pend>0?'style="color:var(--ambar);font-weight:700"':'';
+      const fallaColor=fallas>0?'style="color:var(--rojo);font-weight:700"':'';
+      return `<tr><td><b>${f}</b></td><td class="num">${informadas}</td><td class="num">${noUsadas}</td>
+        <td class="num" ${pendColor}>${pend}</td><td class="num" ${fallaColor}>${fallas}</td></tr>`;
+    }).join('')+'</tbody></table>';
 }
 async function resolverFalla(id){
   const p=DB.partes.find(x=>String(x.id)===String(id));
