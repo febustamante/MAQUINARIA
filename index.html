@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maquinaria y Flota — Agrícola San José</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --pizarra:#2f3a3f; --pizarra2:#3d4a50; --oro:#a8894f; --oro-cl:#c9b285; --linea:#dfe1e0;
+    --fondo:#eceeed; --panel:#ffffff; --txt:#2b3236; --gris:#7c868b;
+    --rojo:#b1483f; --ambar:#c48a2c; --verde:#4f7a4d;
+    --rojo-bg:#f6e7e5; --ambar-bg:#f7efdd; --verde-bg:#e7efe6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--fondo);color:var(--txt);font-size:13px;line-height:1.4;padding:14px;}
+  .wrap{max-width:1400px;margin:0 auto;}
+  header{background:var(--pizarra);color:#fff;padding:16px 22px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+  header h1{font-size:17px;font-weight:600;letter-spacing:.4px;}
+  header .sub{color:var(--oro-cl);font-size:11.5px;margin-top:2px;}
+  header .fecha{font-size:11.5px;color:#cfd6d8;border-left:2px solid var(--oro);padding-left:12px;}
+  header .fecha b{color:#fff;}
+  .demo{background:var(--oro);color:#fff;text-align:center;padding:5px;border-radius:7px;font-size:10.5px;font-weight:600;letter-spacing:.4px;margin:12px 0;text-transform:uppercase;}
+  .tabs{display:flex;gap:6px;margin:14px 0;flex-wrap:wrap;}
+  .tab{padding:9px 18px;background:var(--panel);border:1px solid var(--linea);border-radius:8px;cursor:pointer;font-weight:600;font-size:12.5px;color:var(--gris);}
+  .tab.act{background:var(--pizarra);color:#fff;border-color:var(--pizarra);}
+  .view{display:none;} .view.act{display:block;}
+  .stitle{margin:20px 0 10px;font-size:12px;color:var(--pizarra);font-weight:700;text-transform:uppercase;letter-spacing:1px;display:flex;align-items:center;gap:8px;}
+  .stitle::before{content:"";width:14px;height:2px;background:var(--oro);}
+  .card{background:var(--panel);border:1px solid var(--linea);border-radius:10px;padding:16px 18px;margin-bottom:14px;max-width:560px;}
+  label{display:block;font-weight:600;margin:10px 0 4px;font-size:12px;color:var(--pizarra);}
+  select,input,textarea{width:100%;padding:10px;border:1px solid var(--linea);border-radius:7px;font-size:14px;font-family:inherit;background:#fff;color:var(--txt);}
+  select:focus,input:focus,textarea:focus{outline:none;border-color:var(--oro);}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .chk-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--linea);font-size:13px;}
+  .chk-row:last-child{border-bottom:none;}
+  .switch{position:relative;width:46px;height:25px;flex-shrink:0;}
+  .switch input{opacity:0;width:0;height:0;}
+  .slider{position:absolute;cursor:pointer;inset:0;background:#cfd4d3;border-radius:25px;transition:.25s;}
+  .slider:before{content:"";position:absolute;height:19px;width:19px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.25s;}
+  input:checked + .slider{background:var(--verde);}
+  input:checked + .slider:before{transform:translateX(21px);}
+  .btn{width:100%;padding:13px;border:none;border-radius:9px;background:var(--pizarra);color:#fff;font-size:14px;font-weight:600;cursor:pointer;margin-top:14px;}
+  .btn:active{opacity:.85;}
+  .msg{padding:11px;border-radius:7px;margin-top:12px;text-align:center;font-weight:600;font-size:12.5px;display:none;}
+  .msg.ok{background:var(--verde-bg);color:var(--verde);display:block;}
+  .msg.err{background:var(--rojo-bg);color:var(--rojo);display:block;}
+  .hidden{display:none;}
+  .foto-prev{margin-top:10px;max-width:100%;border-radius:8px;border:1px solid var(--linea);display:none;}
+  .foto-info{font-size:11px;color:var(--gris);margin-top:6px;}
+  .hint{font-size:11px;color:var(--gris);font-weight:400;}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;}
+  .kpi{background:var(--panel);border:1px solid var(--linea);border-radius:8px;padding:12px 14px;}
+  .kpi .lbl{font-size:10px;color:var(--gris);text-transform:uppercase;letter-spacing:.5px;}
+  .kpi .val{font-size:16px;font-weight:600;color:var(--pizarra);margin-top:3px;font-variant-numeric:tabular-nums;}
+  .kpi .foot{font-size:10px;color:#9aa2a6;margin-top:2px;}
+  /* precios */
+  .precios{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;}
+  .precio-box{background:var(--panel);border:1px solid var(--linea);border-radius:8px;padding:12px 14px;flex:1;min-width:220px;}
+  .precio-box .lbl{font-size:11px;color:var(--gris);text-transform:uppercase;letter-spacing:.5px;font-weight:600;}
+  .precio-in{display:flex;align-items:center;gap:8px;margin-top:6px;}
+  .precio-in input{width:110px;font-size:15px;font-weight:600;padding:7px 9px;}
+  .precio-in button{background:var(--pizarra);color:#fff;border:none;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;}
+  .precio-fecha{font-size:10.5px;color:var(--gris);margin-top:5px;}
+  .alertas{background:var(--panel);border:1px solid var(--linea);border-radius:8px;overflow:hidden;}
+  .alerta{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--linea);font-size:12.5px;}
+  .alerta:last-child{border-bottom:none;}
+  .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+  .d-rojo{background:var(--rojo);} .d-ambar{background:var(--ambar);} .d-verde{background:var(--verde);}
+  .alerta .maq{font-weight:600;min-width:66px;}
+  .alerta .tipo{color:var(--gris);flex:1;}
+  .alerta .dias{font-weight:600;font-variant-numeric:tabular-nums;padding:2px 9px;border-radius:11px;font-size:11px;}
+  .dias.rojo{background:var(--rojo-bg);color:var(--rojo);}
+  .dias.ambar{background:var(--ambar-bg);color:var(--ambar);}
+  .dias.verde{background:var(--verde-bg);color:var(--verde);}
+  .alerta-empty{padding:16px;text-align:center;color:var(--gris);font-style:italic;}
+  .filtros{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center;}
+  .filtros .grp{display:flex;gap:5px;flex-wrap:wrap;}
+  .filtros button{border:1px solid var(--linea);background:var(--panel);color:var(--pizarra);padding:5px 12px;border-radius:16px;cursor:pointer;font-size:11.5px;font-weight:500;}
+  .filtros button:hover{border-color:var(--oro);}
+  .filtros button.act{background:var(--pizarra);color:#fff;border-color:var(--pizarra);}
+  .filtros .sep{width:1px;height:20px;background:var(--linea);margin:0 4px;}
+  .tbl-wrap{overflow-x:auto;}
+  .tbl-maq{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--linea);border-radius:8px;overflow:hidden;min-width:820px;}
+  .tbl-maq th{background:var(--pizarra);color:#fff;padding:9px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.4px;text-align:left;font-weight:600;}
+  .tbl-maq th.num,.tbl-maq td.num{text-align:right;font-variant-numeric:tabular-nums;}
+  .tbl-maq td{padding:9px 10px;border-bottom:1px solid var(--linea);font-size:12px;}
+  .tbl-maq tr.mrow{cursor:pointer;}
+  .tbl-maq tr.mrow:hover td{background:#f5f6f5;}
+  .tbl-maq tr:last-child td{border-bottom:none;}
+  .semaf{display:inline-block;width:9px;height:9px;border-radius:50%;}
+  .no-uso{color:#a8b0b4;font-style:italic;font-size:11.5px;}
+  .expand{background:#f8f9f8;}
+  .expand td{padding:0;}
+  .exp-inner{padding:14px 18px;display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+  @media(max-width:760px){.exp-inner{grid-template-columns:1fr;}.grid2{grid-template-columns:1fr;}}
+  .exp-box h4{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--oro);margin-bottom:8px;border-bottom:1px solid var(--linea);padding-bottom:5px;}
+  .exp-line{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px dashed #eaebea;}
+  .exp-line .k{color:var(--gris);} .exp-line .v{font-weight:600;font-variant-numeric:tabular-nums;}
+  .exp-line.tot{border-bottom:none;border-top:1px solid var(--linea);margin-top:4px;padding-top:6px;}
+  .mini{font-size:11.5px;color:var(--gris);}
+  .falla-tag{background:var(--rojo-bg);color:var(--rojo);padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;}
+  .foto-mini{max-width:80px;border-radius:5px;border:1px solid var(--linea);margin-top:4px;display:block;cursor:pointer;}
+  .comp-box{background:#fbfaf7;border:1px solid var(--linea);border-radius:7px;padding:10px 12px;margin-top:6px;}
+  .comp-row{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;}
+  .comp-row .v{font-weight:600;font-variant-numeric:tabular-nums;}
+  .dif-pos{color:var(--rojo);} .dif-neg{color:var(--verde);}
+  .grid-fijos{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;}
+  .cardf{background:var(--panel);border:1px solid var(--linea);border-radius:8px;padding:14px 16px;}
+  .cardf h3{font-size:13px;color:var(--pizarra);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;}
+  .cardf h3 .tag{font-size:10px;font-weight:600;color:var(--oro);border:1px solid var(--oro);padding:2px 8px;border-radius:10px;}
+  .rowf{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px dashed #eee;}
+  .rowf .v{font-weight:600;font-variant-numeric:tabular-nums;}
+  .bar{height:16px;background:var(--fondo);border-radius:8px;overflow:hidden;margin:10px 0 3px;}
+  .bar-fill{height:100%;background:var(--oro);display:flex;align-items:center;justify-content:flex-end;padding-right:6px;color:#fff;font-size:9.5px;font-weight:700;}
+  .barlbl{font-size:10.5px;color:var(--gris);text-align:center;}
+  footer{margin-top:24px;text-align:center;color:#9aa2a6;font-size:10.5px;padding:12px;line-height:1.6;}
+  /* carga GPS */
+  .gps-load{background:var(--panel);border:1px solid var(--linea);border-radius:8px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;}
+  .gps-info{font-size:12px;color:var(--txt);flex:1;min-width:240px;}
+  .gps-estado{font-size:11.5px;color:var(--verde);margin-top:6px;font-weight:600;}
+  .gps-estado.err{color:var(--rojo);}
+  .gps-btn{background:var(--pizarra);color:#fff;padding:11px 18px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;}
+  .gps-btn:active{opacity:.85;}
+  /* editar fecha */
+  .edit-fecha{color:var(--oro);cursor:pointer;font-size:11px;font-weight:600;margin-left:4px;text-decoration:none;border-bottom:1px dashed var(--oro);}
+  .btn-borrar{color:var(--rojo);cursor:pointer;font-size:10.5px;font-weight:600;margin-left:6px;border-bottom:1px dashed var(--rojo);}
+  .btn-borrar:hover{opacity:.7;}
+  /* login */
+  .login-box{max-width:340px;margin:60px auto;background:var(--panel);border:1px solid var(--linea);border-radius:12px;padding:30px 26px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.06);}
+  .login-box h1{font-size:20px;color:var(--pizarra);}
+  .login-sub{color:var(--oro);font-size:12px;font-weight:600;margin-top:2px;margin-bottom:20px;letter-spacing:.5px;}
+  .login-box label{text-align:left;}
+  .login-box input{text-align:center;font-size:24px;letter-spacing:10px;margin-top:6px;}
+  .login-hint{font-size:11px;color:var(--gris);margin-top:16px;}
+  .salir{color:var(--oro);cursor:pointer;border-bottom:1px dashed var(--oro);font-size:11px;}
+  .modal-bg{position:fixed;inset:0;background:rgba(30,37,40,.5);display:none;align-items:center;justify-content:center;z-index:50;padding:16px;}
+  .modal-bg.act{display:flex;}
+  .modal{background:#fff;border-radius:12px;padding:22px;max-width:360px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.25);}
+  .modal h3{font-size:15px;color:var(--pizarra);margin-bottom:4px;}
+  .modal .msub{font-size:12px;color:var(--gris);margin-bottom:14px;}
+  .modal label{margin-top:10px;}
+  .modal-btns{display:flex;gap:8px;margin-top:18px;}
+  .modal-btns button{flex:1;padding:11px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;}
+  .mb-save{background:var(--pizarra);color:#fff;}
+  .mb-cancel{background:#fff;color:var(--pizarra);border:1px solid var(--linea);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- LOGIN PIN -->
+  <div id="login" class="login-box">
+    <h1>Maquinaria y Flota</h1>
+    <div class="login-sub">Agrícola San José</div>
+    <label>Ingresa tu PIN</label>
+    <input type="password" id="pinInput" inputmode="numeric" maxlength="4" placeholder="••••">
+    <button class="btn" onclick="entrar()">Entrar</button>
+    <div id="pinMsg" class="msg"></div>
+    <div class="login-hint">Operadores y supervisión tienen PIN distintos.</div>
+  </div>
+
+  <!-- APP (oculta hasta login) -->
+  <div id="app" class="hidden">
+  <header>
+    <div>
+      <h1>Maquinaria y Flota</h1>
+      <div class="sub">Agrícola San José · <span id="rolActual"></span> · <span class="salir" onclick="salir()">salir</span></div>
+    </div>
+    <div class="fecha">Hoy<br><b id="hoy"></b></div>
+  </header>
+  <div class="demo">Modo demostración · los partes se guardan solo en esta sesión</div>
+
+  <div class="tabs">
+    <div class="tab act" data-v="parte">Parte diario</div>
+    <div class="tab tab-ger" data-v="maq">Máquinas · costos y uso</div>
+    <div class="tab tab-ger" data-v="gastos">Gastos</div>
+    <div class="tab tab-ger" data-v="fijos">Gastos fijos</div>
+  </div>
+
+  <!-- PARTE DIARIO -->
+  <div class="view act" id="v-parte">
+    <div class="stitle">Cargar parte del día</div>
+    <div class="card">
+      <label>Máquina</label>
+      <select id="pMaq"></select>
+      <label>Operador</label>
+      <select id="pOper"><option value="">— Selecciona operador —</option></select>
+      <div class="grid2">
+        <div><label>Horómetro inicio</label><input type="number" id="pHi" inputmode="decimal" placeholder="0"></div>
+        <div><label>Horómetro término</label><input type="number" id="pHt" inputmode="decimal" placeholder="0"></div>
+      </div>
+      <label>Combustible cargado <span class="hint">(litros reales, si se midió)</span></label>
+      <input type="number" id="pLts" inputmode="decimal" placeholder="dejar vacío si no se midió">
+    </div>
+    <div class="card">
+      <label style="margin-top:0">Checklist antes de arrancar</label>
+      <div class="chk-row"><span>Aceite motor</span><label class="switch"><input type="checkbox" id="c_aceite" checked><span class="slider"></span></label></div>
+      <div class="chk-row"><span>Refrigerante</span><label class="switch"><input type="checkbox" id="c_refri" checked><span class="slider"></span></label></div>
+      <div class="chk-row"><span>Hidráulico</span><label class="switch"><input type="checkbox" id="c_hidr" checked><span class="slider"></span></label></div>
+      <div class="chk-row"><span>Neumáticos</span><label class="switch"><input type="checkbox" id="c_neum" checked><span class="slider"></span></label></div>
+      <div class="chk-row"><span>Sin fugas visibles</span><label class="switch"><input type="checkbox" id="c_fugas" checked><span class="slider"></span></label></div>
+      <div class="chk-row"><span>Engrase al día</span><label class="switch"><input type="checkbox" id="c_engrase" checked><span class="slider"></span></label></div>
+    </div>
+    <div class="card">
+      <div class="chk-row" style="border:none"><span>¿Tuvo alguna falla?</span><label class="switch"><input type="checkbox" id="pFalla"><span class="slider"></span></label></div>
+      <div id="fallaBox" class="hidden">
+        <label>Describe la falla</label>
+        <textarea id="pDesc" rows="3" placeholder="Ej: se calienta el motor, embrague patina..."></textarea>
+        <label>Foto de la falla <span class="hint">(opcional)</span></label>
+        <input type="file" id="pFoto" accept="image/*" capture="environment">
+        <img id="fotoPrev" class="foto-prev">
+        <div id="fotoInfo" class="foto-info"></div>
+      </div>
+    </div>
+    <button class="btn" id="btnGuardar">Guardar parte del día</button>
+    <div id="msgParte" class="msg"></div>
+  </div>
+
+  <!-- MÁQUINAS -->
+  <div class="view" id="v-maq">
+    <div class="stitle">Datos del GPS</div>
+    <div class="gps-load" id="gpsLoad">
+      <div class="gps-info">
+        <b>Carga semanal del GPS.</b> Sube el Excel que bajas del GPS y la app suma la distancia y horas por máquina, luego recalcula el combustible estimado.
+        <div class="gps-estado" id="gpsEstado"></div>
+      </div>
+      <label class="gps-btn">Cargar Excel del GPS<input type="file" id="gpsFile" accept=".xlsx,.xls" style="display:none"></label>
+    </div>
+    <div class="stitle">Precio de combustible</div>
+    <div class="precios" id="preciosPanel"></div>
+    <div class="stitle">Alertas vigentes</div>
+    <div class="alertas" id="panelAlertas"></div>
+    <div class="stitle">Resumen de flota</div>
+    <div class="kpis" id="kpisGen"></div>
+    <div class="stitle">Máquinas · costos y uso</div>
+    <div class="filtros" id="filtros"></div>
+    <div class="tbl-wrap"><table class="tbl-maq" id="tblMaq"><thead></thead><tbody></tbody></table></div>
+  </div>
+
+  <!-- GASTOS -->
+  <div class="view" id="v-gastos">
+    <div class="stitle">Cargar gasto por máquina</div>
+    <div class="card">
+      <label>Máquina</label>
+      <select id="gMaq"></select>
+      <div class="grid2">
+        <div><label>Fecha</label><input type="date" id="gFecha"></div>
+        <div><label>Monto ($)</label><input type="number" id="gMonto" inputmode="numeric" placeholder="0"></div>
+      </div>
+      <label>Motivo</label>
+      <select id="gMotivo"></select>
+      <div id="gOtroBox" class="hidden">
+        <label>Escribe el motivo</label>
+        <input id="gOtro" placeholder="Ej: cambio de correa">
+      </div>
+      <label>N° de factura <span class="hint">(opcional)</span></label>
+      <input id="gFactura" placeholder="Ej: 12345">
+      <button class="btn" id="btnGasto">Guardar gasto</button>
+      <div id="msgGasto" class="msg"></div>
+    </div>
+    <div class="stitle">Últimos gastos cargados en esta sesión</div>
+    <div class="card" style="max-width:none">
+      <div id="gastosRecientes"><div class="no-uso">Aún no has cargado gastos en esta sesión.</div></div>
+    </div>
+  </div>
+
+  <!-- FIJOS -->
+  <div class="view" id="v-fijos">
+    <div class="stitle">Gastos fijos mensuales</div>
+    <div class="kpis" id="kpisFijos" style="margin-bottom:12px;"></div>
+    <div class="grid-fijos" id="cardsFijos"></div>
+  </div>
+
+  <footer>
+    Combustible estimado por GPS: distancia ÷ rendimiento × precio, según el combustible de cada máquina.<br>
+    "Cargado" viene del parte diario; cuando hay litros medidos, la app compara cargado vs estimado.<br>
+    Cambio de aceite: tractores por horas de motor (horómetro de los partes), camionetas por kilómetros. Estructura lista para Supabase.
+  </footer>
+  </div><!-- fin #app -->
+</div>
+
+<!-- MODAL editar fechas -->
+<div class="modal-bg" id="modalFecha">
+  <div class="modal">
+    <h3 id="modalTit">Actualizar datos</h3>
+    <div class="msub" id="modalSub"></div>
+    <label>Vencimiento revisión técnica</label>
+    <input type="date" id="editRT">
+    <label>Vencimiento gases y contaminantes</label>
+    <input type="date" id="editGases">
+    <div id="aceiteKm">
+      <label>Cambio de aceite · intervalo (km)</label>
+      <input type="number" id="editIntKm" placeholder="ej. 10000">
+      <label>Km del último cambio de aceite</label>
+      <input type="number" id="editUltKm" placeholder="ej. 100000">
+    </div>
+    <div id="aceiteHr">
+      <label>Cambio de aceite · intervalo (horas)</label>
+      <input type="number" id="editIntHr" placeholder="ej. 250">
+      <label>Horómetro del último cambio de aceite</label>
+      <input type="number" id="editUltHr" placeholder="ej. 1200">
+    </div>
+    <div class="modal-btns">
+      <button class="mb-cancel" onclick="cerrarModal()">Cancelar</button>
+      <button class="mb-save" onclick="guardarFechas()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const DB = {"maquinas": [{"tipo": "TRACTOR", "ubic": "Paine", "resp": "T10", "maq": "T10", "marca": "Kubota", "modelo": "M8540DTN", "ano": 2020, "patente": "LWTR75", "kmact": 0, "rt_fecha": "2028-09-01", "gases_fecha": "2028-09-01", "aceite_prox_km": null, "aceite_faltan_km": "-", "estado": "OPERATIVA", "comb": 73128.89000000001, "mant": 82406, "total": 155534.89, "prioridad": 6, "comb_tipo": "PETRÓLEO", "gps_dist": 365.34, "gps_hrs": 89.31, "rendimiento": 6}, {"tipo": "TRACTOR", "ubic": "Cerrillos", "resp": "T11", "maq": "T11", "marca": "John Deere", "modelo": "5085GL", "ano": 2021, "patente": "LXFB96", "kmact": 0, "rt_fecha": "2025-09-01", "gases_fecha": "2025-09-01", "aceite_prox_km": null, "aceite_faltan_km": "-", "estado": "OPERATIVA", "comb": 62267.84666666666, "mant": 82406, "total": 144673.84666666665, "prioridad": 3, "comb_tipo": "PETRÓLEO", "gps_dist": 311.08, "gps_hrs": 73.48, "rendimiento": 6}, {"tipo": "TRACTOR", "ubic": "Cerrillos", "resp": "T12", "maq": "T12", "marca": "John Deere", "modelo": "5085GL", "ano": 2021, "patente": "LZPF54", "kmact": 0, "rt_fecha": "2025-09-01", "gases_fecha": "2025-09-01", "aceite_prox_km": null, "aceite_faltan_km": "-", "estado": "OPERATIVA", "comb": 74638.14666666664, "mant": 82406, "total": 157044.14666666664, "prioridad": 3, "comb_tipo": "PETRÓLEO", "gps_dist": 372.88, "gps_hrs": 91.27, "rendimiento": 6}, {"tipo": "TRACTOR", "ubic": "Paine", "resp": "T13", "maq": "T13", "marca": "John Deere", "modelo": "5085GL", "ano": 2023, "patente": "RDPG84", "kmact": 0, "rt_fecha": "2027-01-01", "gases_fecha": "2027-01-01", "aceite_prox_km": null, "aceite_faltan_km": "-", "estado": "OPERATIVA", "comb": 148685.80166666658, "mant": 82406, "total": 231091.80166666658, "prioridad": 6, "comb_tipo": "PETRÓLEO", "gps_dist": 742.81, "gps_hrs": 172.44, "rendimiento": 6}, {"tipo": "TRACTOR", "ubic": "Rulo", "resp": "T14", "maq": "T14", "marca": "Kubota", "modelo": "M8540 N", "ano": 2025, "patente": "TZSG44", "kmact": 0, "rt_fecha": "2029-01-01", "gases_fecha": "2029-01-01", "aceite_prox_km": null, "aceite_faltan_km": "-", "estado": "OPERATIVA", "comb": 134734.185, "mant": 1075958, "total": 1210692.185, "prioridad": 6, "comb_tipo": "PETRÓLEO", "gps_dist": 673.11, "gps_hrs": 122.02, "rendimiento": 6}, {"tipo": "TRACTOR", "ubic": "Rulo", "resp": "T4", "maq": "T4", "marca": "New Holland", "modelo": "T4030F", "ano": 2011, "patente": "CYPX-61", "kmact": 0, "rt_fecha": "2028-09-01", "gases_fecha": "2028-09-01", "aceite_prox_km": null, "aceite_faltan_km": "-", "estado": "EN MANTENCIÓN", "comb": 125408.41999999995, "mant": 82407, "total": 207815.41999999995, "prioridad": 2, "comb_tipo": "PETRÓLEO", "gps_dist": 626.52, "gps_hrs": 92.75, "rendimiento": 6}, {"tipo": "TRACTOR", "ubic": "Rulo", "resp": "T5", "maq": "T5", "marca": "New Holland", "modelo": "T4030FWD", "ano": 2011, "patente": "CYPX-60", "kmact": 0, "rt_fecha": "2028-09-01", "gases_fecha": "2028-09-01", "aceite_prox_km": null, "aceite_faltan_km": "-", "estado": "OPERATIVA", "comb": 76049.32166666666, "mant": 82407, "total": 158456.32166666666, "prioridad": 6, "comb_tipo": "PETRÓLEO", "gps_dist": 379.93, "gps_hrs": 77.73, "rendimiento": 6}, {"tipo": "TRACTOR", "ubic": "Rulo", "resp": "T6", "maq": "T6", "marca": "New Holland", "modelo": "T4040F W FRUTER", "ano": 2013, "patente": "FDHD-57", "kmact": 0, "rt_fecha": "2028-09-01", "gases_fecha": "2028-09-01", "aceite_prox_km": null, "aceite_faltan_km": "-", "estado": "OPERATIVA", "comb": 74143.73499999999, "mant": 82407, "total": 156550.735, "prioridad": 6, "comb_tipo": "PETRÓLEO", "gps_dist": 370.41, "gps_hrs": 113.28, "rendimiento": 6}, {"tipo": "TRACTOR", "ubic": "Rulo", "resp": "T7", "maq": "T7", "marca": "Same", "modelo": "FRUTTETO3 75", "ano": 2017, "patente": "JYJT-42", "kmact": 0, "rt_fecha": "2026-10-01", "gases_fecha": "2026-10-01", "aceite_prox_km": null, "aceite_faltan_km": "-", "estado": "OPERATIVA", "comb": 82748.90000000001, "mant": 82407, "total": 165155.90000000002, "prioridad": 6, "comb_tipo": "PETRÓLEO", "gps_dist": 413.4, "gps_hrs": 212.37, "rendimiento": 6}, {"tipo": "TRACTOR", "ubic": "Cerrillos", "resp": "T8", "maq": "T8", "marca": "Same", "modelo": "FRUTTETO3 75", "ano": 2017, "patente": "JYJT-41", "kmact": 0, "rt_fecha": "2026-10-01", "gases_fecha": "2026-10-01", "aceite_prox_km": null, "aceite_faltan_km": "-", "estado": "OPERATIVA", "comb": 71373.42833333332, "mant": 82407, "total": 153780.42833333332, "prioridad": 6, "comb_tipo": "PETRÓLEO", "gps_dist": 356.57, "gps_hrs": 74.68, "rendimiento": 6}, {"tipo": "TRACTOR", "ubic": "Cerrillos", "resp": "T9", "maq": "T9", "marca": "Same", "modelo": "FRUTTETO 3 75 DT 46 NA", "ano": 2018, "patente": "JXXZ-54", "kmact": 0, "rt_fecha": "2026-10-01", "gases_fecha": "2026-10-01", "aceite_prox_km": null, "aceite_faltan_km": "-", "estado": "OPERATIVA", "comb": 29370.454999999998, "mant": 82407, "total": 111777.455, "prioridad": 6, "comb_tipo": "PETRÓLEO", "gps_dist": 146.73, "gps_hrs": 66.79, "rendimiento": 6}, {"tipo": "Vehiculo", "ubic": "Cerrillos", "resp": "CAMPO CERRILLOS", "maq": "CMTA11", "marca": "Maxus ", "modelo": "T6 DCAB 4X2 2.0", "ano": 2024, "patente": "TTWS71", "kmact": 13750, "rt_fecha": "2027-04-01", "gases_fecha": "2027-04-01", "aceite_prox_km": 25000, "aceite_faltan_km": 11250, "estado": "OPERATIVA", "comb": 319480.6788888888, "mant": 155599, "total": 475079.6788888888, "prioridad": 6, "comb_tipo": "PETRÓLEO", "gps_dist": 2394.11, "gps_hrs": 180.79, "rendimiento": 11}, {"tipo": "Vehiculo", "ubic": "Paine", "resp": "CAMPO PAINE", "maq": "CMTA01", "marca": "Mitsubishi", "modelo": "L200 Katana", "ano": 2015, "patente": "GRTF64", "kmact": 199236, "rt_fecha": "2026-07-01", "gases_fecha": "2026-07-01", "aceite_prox_km": 206000, "aceite_faltan_km": 6764, "estado": "OPERATIVA", "comb": 220296.76111111103, "mant": 107800, "total": 328096.76111111103, "prioridad": 3, "comb_tipo": "PETRÓLEO", "gps_dist": 1650.85, "gps_hrs": 148.9, "rendimiento": 11}, {"tipo": "Vehiculo", "ubic": "Rulo", "resp": "CAMPO RULO", "maq": "CMTA10", "marca": "Maxus ", "modelo": "T6 DCAB 4X2 2.0", "ano": 2024, "patente": "TTWS70", "kmact": 32559, "rt_fecha": "2027-02-01", "gases_fecha": "2027-02-01", "aceite_prox_km": 40000, "aceite_faltan_km": 7441, "estado": "OPERATIVA", "comb": 214525.28888888887, "mant": 120599, "total": 335124.2888888889, "prioridad": 5, "comb_tipo": "PETRÓLEO", "gps_dist": 1607.6, "gps_hrs": 105.81, "rendimiento": 11}, {"tipo": "Vehiculo", "ubic": "Paine", "resp": "GONZALO GUERRERO", "maq": "CMTA02", "marca": "Nissan", "modelo": "NP300", "ano": 2018, "patente": "KBVX10", "kmact": 172278.82, "rt_fecha": "2027-02-01", "gases_fecha": "2027-02-01", "aceite_prox_km": 180219, "aceite_faltan_km": 7940.179999999993, "estado": "OPERATIVA", "comb": 255877.05333333334, "mant": 37800, "total": 293677.05333333334, "prioridad": 5, "comb_tipo": "PETRÓLEO", "gps_dist": 1917.48, "gps_hrs": 0.0, "rendimiento": 11}, {"tipo": "Vehiculo", "ubic": "Cerrillos", "resp": "HERNAN ROJAS", "maq": "CMTA0", "marca": "GWM", "modelo": "POER", "ano": 2026, "patente": "VJJV30", "kmact": 0, "rt_fecha": "2030-02-01", "gases_fecha": "2030-02-01", "aceite_prox_km": null, "aceite_faltan_km": "-", "estado": "OPERATIVA", "comb": 0, "mant": 216577, "total": 216577, "prioridad": 6, "comb_tipo": null, "gps_dist": 0, "gps_hrs": 0, "rendimiento": null}, {"tipo": "Vehiculo", "ubic": "Rulo", "resp": "RODRIGO SALINAS", "maq": "CMTA07", "marca": "GWM", "modelo": "POER", "ano": 2026, "patente": "VZJV76", "kmact": 0, "rt_fecha": "2029-09-01", "gases_fecha": "2029-09-01", "aceite_prox_km": null, "aceite_faltan_km": "-", "estado": "OPERATIVA", "comb": 632917.6588888891, "mant": 254377, "total": 887294.6588888891, "prioridad": 6, "comb_tipo": "PETRÓLEO", "gps_dist": 4742.93, "gps_hrs": 138.12, "rendimiento": 11}, {"tipo": "Vehiculo", "ubic": "Cerrillos", "resp": "SERGIO ROJAS", "maq": "CMTA08", "marca": "GWM", "modelo": "POER", "ano": 2026, "patente": "VZJV50", "kmact": 0, "rt_fecha": "2030-02-01", "gases_fecha": "2030-02-01", "aceite_prox_km": null, "aceite_faltan_km": "-", "estado": "OPERATIVA", "comb": 264639.01555555564, "mant": 487373, "total": 752012.0155555557, "prioridad": 6, "comb_tipo": "PETRÓLEO", "gps_dist": 1983.14, "gps_hrs": 82.8, "rendimiento": 11}, {"tipo": "Vehiculo", "ubic": "Rulo", "resp": "SSANYONG", "maq": "CMTA0", "marca": "Ssangyong", "modelo": "Actyon", "ano": 2017, "patente": "JKVT20", "kmact": 0, "rt_fecha": "2025-02-01", "gases_fecha": "2025-02-01", "aceite_prox_km": null, "aceite_faltan_km": "-", "estado": "FUERA DE SERVICIO", "comb": 0, "mant": 25300, "total": 25300, "prioridad": 1, "comb_tipo": null, "gps_dist": 0, "gps_hrs": 0, "rendimiento": null}, {"tipo": "Vehiculo", "ubic": "Cerrillos", "resp": "VG CERRILLOS", "maq": "CMTA05", "marca": "Volkswagen", "modelo": "Saveiro", "ano": 2018, "patente": "KCTL48", "kmact": 106758.78, "rt_fecha": "2026-11-01", "gases_fecha": "2026-11-01", "aceite_prox_km": 108000, "aceite_faltan_km": 1241.2200000000012, "estado": "OPERATIVA", "comb": 206031.63636363635, "mant": 70800, "total": 276831.63636363635, "prioridad": 5, "comb_tipo": "BENCINA", "gps_dist": 1462.16, "gps_hrs": 0.0, "rendimiento": 11}, {"tipo": "Vehiculo", "ubic": "Rulo", "resp": "VG GERARDO", "maq": "CMTA04", "marca": "Volkswagen", "modelo": "Saveiro", "ano": 2018, "patente": "KCTL47", "kmact": 113508.42, "rt_fecha": "2027-01-01", "gases_fecha": "2027-01-01", "aceite_prox_km": 117748, "aceite_faltan_km": 4239.580000000002, "estado": "OPERATIVA", "comb": 341364.95454545465, "mant": 135674, "total": 477038.95454545465, "prioridad": 5, "comb_tipo": "BENCINA", "gps_dist": 2422.59, "gps_hrs": 0.0, "rendimiento": 11}, {"tipo": "Vehiculo", "ubic": "Rulo", "resp": "VG PIÑALEO", "maq": "CMTA03", "marca": "Volkswagen", "modelo": "Saveiro", "ano": 2018, "patente": "KCTL49", "kmact": 111468.22, "rt_fecha": "2026-10-01", "gases_fecha": "2026-09-01", "aceite_prox_km": 110900, "aceite_faltan_km": -568.2200000000012, "estado": "OPERATIVA", "comb": 371846.40909090923, "mant": 70800, "total": 442646.40909090923, "prioridad": 5, "comb_tipo": "BENCINA", "gps_dist": 2638.91, "gps_hrs": 0.0, "rendimiento": 11}], "gastos": [{"fecha": "2026-07-13", "resp": "T4", "monto": 44607, "motivo": "ACEITE 15W40 CG4 (TAMBOR)"}, {"fecha": "2026-07-13", "resp": "T5", "monto": 44607, "motivo": "ACEITE 15W40 CG4 (TAMBOR)"}, {"fecha": "2026-07-13", "resp": "T6", "monto": 44607, "motivo": "ACEITE 15W40 CG4 (TAMBOR)"}, {"fecha": "2026-07-13", "resp": "T7", "monto": 44607, "motivo": "ACEITE 15W40 CG4 (TAMBOR)"}, {"fecha": "2026-07-13", "resp": "T8", "monto": 44607, "motivo": "ACEITE 15W40 CG4 (TAMBOR)"}, {"fecha": "2026-07-13", "resp": "T9", "monto": 44607, "motivo": "ACEITE 15W40 CG4 (TAMBOR)"}, {"fecha": "2026-07-13", "resp": "T10", "monto": 44606, "motivo": "ACEITE 15W40 CG4 (TAMBOR)"}, {"fecha": "2026-07-13", "resp": "T11", "monto": 44606, "motivo": "ACEITE 15W40 CG4 (TAMBOR)"}, {"fecha": "2026-07-13", "resp": "T12", "monto": 44606, "motivo": "ACEITE 15W40 CG4 (TAMBOR)"}, {"fecha": "2026-07-13", "resp": "T13", "monto": 44606, "motivo": "ACEITE 15W40 CG4 (TAMBOR)"}, {"fecha": "2026-07-13", "resp": "T14", "monto": 44606, "motivo": "ACEITE 15W40 CG4 (TAMBOR)"}, {"fecha": "2026-05-28", "resp": "VG PIÑALEO", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "VG PIÑALEO", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-05-28", "resp": "VG GERARDO", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "VG GERARDO", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-05-28", "resp": "VG CERRILLOS", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "VG CERRILLOS", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-05-28", "resp": "T9", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "T9", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-05-28", "resp": "T8", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "T8", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-05-28", "resp": "T7", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "T7", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-05-28", "resp": "T6", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "T6", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-05-28", "resp": "T5", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "T5", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-05-28", "resp": "T4", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "T4", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-05-28", "resp": "T14", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "T14", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-05-28", "resp": "T13", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "T13", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-05-28", "resp": "T12", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "T12", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-05-28", "resp": "T11", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "T11", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-05-28", "resp": "T10", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "T10", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-05-28", "resp": "SSANYONG", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-05-28", "resp": "SERGIO ROJAS", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "SERGIO ROJAS", "monto": 232996, "motivo": "REVISION TECNICA"}, {"fecha": "2026-03-30", "resp": "SERGIO ROJAS", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-05-28", "resp": "RODRIGO SALINAS", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "RODRIGO SALINAS", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-05-28", "resp": "GONZALO GUERRERO", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "GONZALO GUERRERO", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-05-28", "resp": "CAMPO RULO", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "CAMPO RULO", "monto": 82799, "motivo": "REVISION TECNICA"}, {"fecha": "2026-03-30", "resp": "CAMPO RULO", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-05-28", "resp": "CAMPO PAINE", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "CAMPO PAINE", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-03-30", "resp": "CAMPO PAINE", "monto": 35000, "motivo": "PERMISO DE CIRCULACION"}, {"fecha": "2026-03-30", "resp": "CAMPO PAINE", "monto": 35000, "motivo": "PERMISO DE CIRCULACION"}, {"fecha": "2026-05-28", "resp": "CAMPO CERRILLOS", "monto": 25300, "motivo": "GPS"}, {"fecha": "2026-03-30", "resp": "CAMPO CERRILLOS", "monto": 82799, "motivo": "REVISION TECNICA"}, {"fecha": "2026-03-30", "resp": "CAMPO CERRILLOS", "monto": 12500, "motivo": "POLIZA DE SEGURO"}, {"fecha": "2026-03-30", "resp": "CAMPO CERRILLOS", "monto": 35000, "motivo": "PERMISO DE CIRCULACION"}, {"fecha": "2026-06-10", "resp": "VG GERARDO", "monto": 64874, "motivo": "BATERIA"}, {"fecha": "2026-06-24", "resp": "VG GERARDO", "monto": 8000, "motivo": "GASES Y CONTAMINANTES"}, {"fecha": "2026-06-24", "resp": "VG PIÑALEO", "monto": 8000, "motivo": "GASES Y CONTAMINANTES"}, {"fecha": "2026-06-24", "resp": "VG CERRILLOS", "monto": 8000, "motivo": "GASES Y CONTAMINANTES"}, {"fecha": "2026-06-24", "resp": "VG GERARDO", "monto": 25000, "motivo": "ARREGLO GASES"}, {"fecha": "2026-06-24", "resp": "VG PIÑALEO", "monto": 25000, "motivo": "ARREGLO GASES"}, {"fecha": "2026-06-24", "resp": "VG CERRILLOS", "monto": 25000, "motivo": "ARREGLO GASES"}, {"fecha": "2026-07-07", "resp": "T14", "monto": 168188, "motivo": "MANTENCIÓN COMPLETA"}, {"fecha": "2026-07-07", "resp": "T14", "monto": 33000, "motivo": "FILTRO DE AIRE PRIMARIO"}, {"fecha": "2026-07-07", "resp": "T14", "monto": 22000, "motivo": "FILTRO DE AIRE SEGUNDARIO"}, {"fecha": "2026-07-07", "resp": "T14", "monto": 22600, "motivo": "FILTRO ACEITE MOTOR"}, {"fecha": "2026-07-07", "resp": "T14", "monto": 70000, "motivo": "FILTRO HIDRAULICO"}, {"fecha": "2026-07-07", "resp": "T14", "monto": 25000, "motivo": "FILTRO COMBUSTIBLE"}, {"fecha": "2026-07-07", "resp": "T14", "monto": 35000, "motivo": "ELEMENT"}, {"fecha": "2026-07-07", "resp": "T14", "monto": 54000, "motivo": "ACEITE 15W40 KUBOTA BIDON 5 LTS"}, {"fecha": "2026-07-07", "resp": "T14", "monto": 4800, "motivo": "ACEITE MOTOR 15W40 KUBOTA EN LT"}, {"fecha": "2026-07-07", "resp": "T14", "monto": 339000, "motivo": "ACEITE TRASMISION UDT KUBOTA BIDON 19 LTS"}, {"fecha": "2026-07-07", "resp": "T14", "monto": 4400, "motivo": "ACEITE 80W90 KUBOTA 1LT"}, {"fecha": "2026-07-07", "resp": "T14", "monto": 16000, "motivo": "RESORTE DE FRENO"}, {"fecha": "2026-07-07", "resp": "T14", "monto": 48000, "motivo": "PIOLA FRENO IZQUERDO"}, {"fecha": "2026-07-07", "resp": "T14", "monto": 38000, "motivo": "PIOLA FRENO DERECHO"}, {"fecha": "2026-07-07", "resp": "T14", "monto": 32500, "motivo": "TRASLADO SERVICIO"}, {"fecha": "2026-07-07", "resp": "T14", "monto": 36000, "motivo": "OTROS"}, {"fecha": "2026-07-07", "resp": "T14", "monto": 1064, "motivo": "GRASA MULTIPROPOSITO"}, {"fecha": "2026-07-07", "resp": "T14", "monto": 44000, "motivo": "ACEITE 80W90 KUBOTA BIDON 5LT"}, {"fecha": "2026-07-14", "resp": "RODRIGO SALINAS", "monto": 216577, "motivo": "PERMISO DE CIRCULACION"}, {"fecha": "2026-07-14", "resp": "HERNAN ROJAS", "monto": 216577, "motivo": "SIN DETALLE"}, {"fecha": "2026-07-14", "resp": "SERGIO ROJAS", "monto": 216577, "motivo": "SIN DETALLE"}], "fijos": {"gps_unit": 20314, "gps_count": 22, "gwm": {"unidades": 3, "cuota": 510305, "ini": "2026-07-15", "fin": "2029-07-15", "dia": 15}, "maxus": {"unidades": 2, "cuota": 665090, "ini": "2024-11-10", "fin": "2026-11-10", "dia": 10}}, "paraParte": [{"maq": "T10", "marca": "Kubota", "modelo": "M8540DTN", "patente": "LWTR75", "tipo": "TRACTOR", "comb_tipo": "PETRÓLEO"}, {"maq": "T11", "marca": "John Deere", "modelo": "5085GL", "patente": "LXFB96", "tipo": "TRACTOR", "comb_tipo": "PETRÓLEO"}, {"maq": "T12", "marca": "John Deere", "modelo": "5085GL", "patente": "LZPF54", "tipo": "TRACTOR", "comb_tipo": "PETRÓLEO"}, {"maq": "T13", "marca": "John Deere", "modelo": "5085GL", "patente": "RDPG84", "tipo": "TRACTOR", "comb_tipo": "PETRÓLEO"}, {"maq": "T14", "marca": "Kubota", "modelo": "M8540 N", "patente": "TZSG44", "tipo": "TRACTOR", "comb_tipo": "PETRÓLEO"}, {"maq": "T4", "marca": "New Holland", "modelo": "T4030F", "patente": "CYPX-61", "tipo": "TRACTOR", "comb_tipo": "PETRÓLEO"}, {"maq": "T5", "marca": "New Holland", "modelo": "T4030FWD", "patente": "CYPX-60", "tipo": "TRACTOR", "comb_tipo": "PETRÓLEO"}, {"maq": "T6", "marca": "New Holland", "modelo": "T4040F W FRUTER", "patente": "FDHD-57", "tipo": "TRACTOR", "comb_tipo": "PETRÓLEO"}, {"maq": "T7", "marca": "Same", "modelo": "FRUTTETO3 75", "patente": "JYJT-42", "tipo": "TRACTOR", "comb_tipo": "PETRÓLEO"}, {"maq": "T8", "marca": "Same", "modelo": "FRUTTETO3 75", "patente": "JYJT-41", "tipo": "TRACTOR", "comb_tipo": "PETRÓLEO"}, {"maq": "T9", "marca": "Same", "modelo": "FRUTTETO 3 75 DT 46 NA", "patente": "JXXZ-54", "tipo": "TRACTOR", "comb_tipo": "PETRÓLEO"}, {"maq": "CMTA05", "marca": "Volkswagen", "modelo": "Saveiro", "patente": "KCTL48", "tipo": "Vehiculo", "comb_tipo": "BENCINA"}, {"maq": "CMTA04", "marca": "Volkswagen", "modelo": "Saveiro", "patente": "KCTL47", "tipo": "Vehiculo", "comb_tipo": "BENCINA"}, {"maq": "CMTA03", "marca": "Volkswagen", "modelo": "Saveiro", "patente": "KCTL49", "tipo": "Vehiculo", "comb_tipo": "BENCINA"}], "partes": [{"id": 1, "fecha": "2026-07-10", "operador": "Rodrigo Salinas", "maq": "T14", "hi": 1240, "ht": 1248.5, "lts": 42, "chk": {"aceite": true, "refri": true, "hidr": true, "neum": true, "fugas": true, "engrase": true}, "falla": false, "desc": null, "foto": null}, {"id": 2, "fecha": "2026-07-10", "operador": "Juan", "maq": "T4", "hi": 980, "ht": 986, "lts": 38, "chk": {"aceite": true, "refri": false, "hidr": true, "neum": true, "fugas": true, "engrase": true}, "falla": true, "desc": "Motor se calienta después de 3 horas", "foto": null}, {"id": 3, "fecha": "2026-07-09", "operador": "Luis", "maq": "T13", "hi": 2100, "ht": 2107.5, "lts": 55, "chk": {"aceite": true, "refri": true, "hidr": true, "neum": true, "fugas": false, "engrase": true}, "falla": true, "desc": "Embrague patina en pendiente", "foto": null}, {"id": 4, "fecha": "2026-07-09", "operador": "Rodrigo Salinas", "maq": "T14", "hi": 1232, "ht": 1240, "lts": 40, "chk": {"aceite": true, "refri": true, "hidr": true, "neum": true, "fugas": true, "engrase": true}, "falla": false, "desc": null, "foto": null}], "precios": {"petroleo": 1201, "bencina": 1550, "fecha_petroleo": "2026-07-14", "fecha_bencina": "2026-07-14"}, "operadores": ["Jose Piñaleo","Osvaldo Serrano","Dagoberto Machuca","Carlos Nuñez","Hector Caballero","Eduardo Quilodran","Jose Rojas","Cristian Urra","Ruben Galvez","Oscar Marin","Jose Navarre","Jorge Contreras","Gerardo Araya","Omar Terran"], "acceso": {"operador": "1234", "gerencia": "7788"}};
+
+/* ===== CONEXIÓN SUPABASE ===== */
+const SB_URL='https://cmfvnluppvqyqwpfjrbs.supabase.co';
+const SB_KEY='sb_publishable_TvfWNvrb2AitDfwvW5YNww_QsR_gjD1';
+let sb=null;
+try{ sb=window.supabase.createClient(SB_URL,SB_KEY); }catch(e){ console.warn('Supabase no disponible, uso datos locales',e); }
+
+/* Lee las máquinas desde Supabase y las mapea al formato de la app.
+   Si falla (sin internet o error), deja los datos locales que ya tiene DB. */
+async function cargarMaquinasSupabase(){
+  if(!sb) return false;
+  try{
+    const {data,error}=await sb.from('maq_maquinas').select('*').order('maq');
+    if(error){console.warn('Error leyendo maq_maquinas:',error.message);return false;}
+    if(!data||!data.length){console.warn('maq_maquinas vacía, uso datos locales');return false;}
+    // conservar campos calculados/combustible del DB local por código, si existen
+    const previos={}; DB.maquinas.forEach(m=>previos[m.maq]=m);
+    DB.maquinas=data.map(r=>{
+      const p=previos[r.maq]||{};
+      return {
+        tipo:r.tipo, ubic:r.ubicacion, resp:r.responsable, maq:r.maq,
+        marca:r.marca, modelo:r.modelo, ano:r.ano, patente:r.patente,
+        kmact:r.km_actual!=null?Number(r.km_actual):0,
+        rt_fecha:r.rt_fecha, gases_fecha:r.gases_fecha,
+        estado:r.estado, prioridad:r.prioridad,
+        comb_tipo:r.comb_tipo, rendimiento:r.rendimiento!=null?Number(r.rendimiento):null,
+        aceite_int_km:r.aceite_int_km, aceite_ult_km:r.aceite_ult_km,
+        aceite_int_hr:r.aceite_int_hr, aceite_ult_hr:r.aceite_ult_hr,
+        // estos se recalculan/mantienen desde el uso local mientras no migremos gastos/gps
+        comb:p.comb||0, mant:p.mant||0, total:p.total||0,
+        gps_dist:p.gps_dist||0, gps_hrs:p.gps_hrs||0
+      };
+    });
+    console.log('✓ '+data.length+' máquinas cargadas desde Supabase');
+    return true;
+  }catch(e){console.warn('Fallo conexión Supabase:',e);return false;}
+}
+
+/* util */
+const HOY=new Date();HOY.setHours(0,0,0,0);
+const fmt=n=>new Intl.NumberFormat('es-CL').format(Math.round(n));
+const CLP=n=>'$'+fmt(n);
+const parseF=s=>{if(!s)return null;const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d);};
+const diasHasta=s=>{const f=parseF(s);if(!f)return null;return Math.round((f-HOY)/86400000);};
+const hoyISO=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+const fechaCorta=s=>{const f=parseF(s);if(!f)return'';return f.toLocaleDateString('es-CL',{day:'2-digit',month:'short'});};
+document.getElementById('hoy').textContent=HOY.toLocaleDateString('es-CL',{day:'2-digit',month:'long',year:'numeric'});
+
+/* ===== LOGIN / ROLES ===== */
+let ROL=null; // 'operador' | 'gerencia'
+async function entrar(){
+  const pin=document.getElementById('pinInput').value.trim();
+  const msg=document.getElementById('pinMsg');
+  if(pin===DB.acceso.gerencia){ROL='gerencia';}
+  else if(pin===DB.acceso.operador){ROL='operador';}
+  else{msg.className='msg err';msg.textContent='PIN incorrecto';return;}
+  msg.className='msg';msg.textContent='Conectando...';
+  // leer máquinas actualizadas desde Supabase (si falla, sigue con las locales)
+  await cargarMaquinasSupabase();
+  document.getElementById('login').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  aplicarRol();
+}
+function salir(){location.reload();}
+function aplicarRol(){
+  const esGer=ROL==='gerencia';
+  document.getElementById('rolActual').textContent=esGer?'Gerencia':'Operador';
+  // pestañas gerenciales solo para gerencia
+  document.querySelectorAll('.tab-ger').forEach(t=>t.style.display=esGer?'':'none');
+  // el demo solo lo ve gerencia (al operador no le importa)
+  const demo=document.querySelector('.demo'); if(demo)demo.style.display=esGer?'':'none';
+  // asegurar que el operador quede en la pestaña parte diario
+  if(!esGer){
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('act'));
+    document.querySelectorAll('.view').forEach(x=>x.classList.remove('act'));
+    document.querySelector('.tab[data-v="parte"]').classList.add('act');
+    document.getElementById('v-parte').classList.add('act');
+  }
+}
+document.getElementById('pinInput').addEventListener('keypress',e=>{if(e.key==='Enter')entrar();});
+function nivelDias(d){if(d===null)return null;if(d<0)return'rojo';if(d<=30)return'ambar';return'verde';}
+function textoDias(d){if(d===null)return'—';if(d<0)return'vencido hace '+Math.abs(d)+' d';if(d===0)return'vence hoy';return'faltan '+d+' d';}
+
+/* precio de combustible de una máquina */
+function precioDe(m){return m.comb_tipo==='BENCINA'?DB.precios.bencina:DB.precios.petroleo;}
+/* combustible estimado GPS por máquina */
+function combEstimado(m){
+  if(!m.rendimiento||!m.gps_dist)return 0;
+  const litros=m.gps_dist/m.rendimiento;
+  return litros*precioDe(m);
+}
+/* combustible cargado real (suma de litros de partes) × precio */
+function combCargado(m){
+  const ps=DB.partes.filter(p=>p.maq===m.maq && typeof p.lts==='number' && p.lts>0);
+  if(!ps.length)return null;
+  const litros=ps.reduce((s,p)=>s+p.lts,0);
+  return {litros, monto:litros*precioDe(m)};
+}
+
+/* tabs */
+document.querySelectorAll('.tab').forEach(t=>{
+  t.onclick=()=>{
+    // seguridad: operador no accede a pestañas gerenciales
+    if(ROL==='operador' && t.classList.contains('tab-ger'))return;
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('act'));
+    document.querySelectorAll('.view').forEach(x=>x.classList.remove('act'));
+    t.classList.add('act');
+    document.getElementById('v-'+t.dataset.v).classList.add('act');
+    if(t.dataset.v==='maq'){renderPrecios();renderAlertas();renderKpisGen();renderTabla();}
+    if(t.dataset.v==='fijos')renderFijos();
+    if(t.dataset.v==='gastos')initGastos();
+  };
+});
+
+/* ===== PESTAÑA GASTOS ===== */
+const MOTIVOS_FRECUENTES=['MANTENCIÓN COMPLETA','REVISION TECNICA','GASES Y CONTAMINANTES','PERMISO DE CIRCULACION','POLIZA DE SEGURO','GPS','BATERIA','FILTRO ACEITE MOTOR','FILTRO DE AIRE','FILTRO COMBUSTIBLE','ACEITE MOTOR','NEUMÁTICOS','FRENOS','TRASLADO SERVICIO'];
+let gastosInit=false;
+function initGastos(){
+  if(gastosInit)return;
+  gastosInit=true;
+  // máquinas ordenadas
+  document.getElementById('gMaq').innerHTML=DB.maquinas.slice()
+    .sort((a,b)=>a.maq.localeCompare(b.maq,undefined,{numeric:true}))
+    .map(m=>`<option value="${m.maq}">${m.maq} · ${m.marca} ${m.modelo} · ${m.ubic}</option>`).join('');
+  // motivos + Otro
+  document.getElementById('gMotivo').innerHTML=MOTIVOS_FRECUENTES.map(x=>`<option value="${x}">${x}</option>`).join('')+'<option value="__OTRO__">Otro (escribir)</option>';
+  document.getElementById('gFecha').value=hoyISO();
+  document.getElementById('gMotivo').onchange=e=>{
+    document.getElementById('gOtroBox').classList.toggle('hidden',e.target.value!=='__OTRO__');
+  };
+  document.getElementById('btnGasto').onclick=guardarGasto;
+}
+function guardarGasto(){
+  const msg=document.getElementById('msgGasto');
+  const cod=document.getElementById('gMaq').value;
+  const fecha=document.getElementById('gFecha').value;
+  const monto=parseFloat(document.getElementById('gMonto').value);
+  let motivo=document.getElementById('gMotivo').value;
+  const factura=document.getElementById('gFactura').value.trim();
+  if(motivo==='__OTRO__'){
+    motivo=document.getElementById('gOtro').value.trim().toUpperCase();
+    if(!motivo){msg.className='msg err';msg.textContent='Escribe el motivo del gasto';return;}
+  }
+  if(!fecha){msg.className='msg err';msg.textContent='Indica la fecha';return;}
+  if(isNaN(monto)||monto<=0){msg.className='msg err';msg.textContent='Ingresa un monto válido';return;}
+  const m=DB.maquinas.find(x=>x.maq===cod);
+  // el gasto se guarda con el resp de la máquina (así aparece en su detalle)
+  const nuevo={id:'g'+Date.now(),fecha:fecha,resp:m.resp,maq:cod,monto:monto,motivo:motivo,factura:factura||null};
+  DB.gastos.unshift(nuevo);
+  // sumar al total de mantención de la máquina
+  m.mant=(m.mant||0)+monto;
+  m.total=(m.total||0)+monto;
+  msg.className='msg ok';msg.textContent='✓ Gasto guardado en '+cod+' · '+CLP(monto);
+  document.getElementById('gMonto').value='';
+  document.getElementById('gFactura').value='';
+  document.getElementById('gOtro').value='';
+  document.getElementById('gMotivo').value=MOTIVOS_FRECUENTES[0];
+  document.getElementById('gOtroBox').classList.add('hidden');
+  renderGastosRecientes();
+  setTimeout(()=>{msg.style.display='none';},4000);
+}
+let gastosSesion=[];
+function renderGastosRecientes(){
+  // reconstruir desde los gastos que tienen maq (los cargados en sesión)
+  const recientes=DB.gastos.filter(g=>g.maq).slice(0,15);
+  const cont=document.getElementById('gastosRecientes');
+  if(!recientes.length){cont.innerHTML='<div class="no-uso">Aún no has cargado gastos en esta sesión.</div>';return;}
+  cont.innerHTML=`<table class="tbl-maq" style="min-width:auto"><thead><tr>
+    <th>Fecha</th><th>Máquina</th><th>Motivo</th><th>N° factura</th><th class="num">Monto</th><th></th></tr></thead><tbody>`+
+    recientes.map(g=>`<tr><td>${g.fecha}</td><td><b>${g.maq}</b></td><td>${g.motivo}</td><td>${g.factura||'—'}</td><td class="num">${CLP(g.monto)}</td><td><span class="btn-borrar" onclick="borrarGasto('${g.id}')">borrar</span></td></tr>`).join('')+
+    `</tbody></table>`;
+}
+function borrarParte(id){
+  const i=DB.partes.findIndex(p=>String(p.id)===String(id));
+  if(i<0)return;
+  const p=DB.partes[i];
+  if(!confirm('¿Borrar este parte?\n'+p.maq+' · '+p.fecha+' · '+p.operador+'\nEsta acción no se puede deshacer.'))return;
+  DB.partes.splice(i,1);
+  renderTabla();renderKpisGen();
+}
+function borrarGasto(id){
+  const i=DB.gastos.findIndex(g=>g.id===id);
+  if(i<0)return;
+  const g=DB.gastos[i];
+  if(!confirm('¿Borrar este gasto?\n'+g.maq+' · '+g.motivo+' · '+CLP(g.monto)+'\nEsta acción no se puede deshacer.'))return;
+  // restar del total de la máquina
+  const m=DB.maquinas.find(x=>x.maq===g.maq);
+  if(m){m.mant=(m.mant||0)-g.monto;m.total=(m.total||0)-g.monto;}
+  DB.gastos.splice(i,1);
+  renderGastosRecientes();
+}
+
+/* PARTE DIARIO */
+document.getElementById('pMaq').innerHTML=DB.paraParte
+  .sort((a,b)=>a.maq.localeCompare(b.maq,undefined,{numeric:true}))
+  .map(m=>`<option value="${m.maq}">${m.maq} · ${m.marca} ${m.modelo} · ${m.comb_tipo||''}</option>`).join('');
+document.getElementById('pOper').innerHTML='<option value="">— Selecciona operador —</option>'+
+  DB.operadores.slice().sort((a,b)=>a.localeCompare(b)).map(o=>`<option value="${o}">${o}</option>`).join('');
+document.getElementById('pFalla').onchange=e=>document.getElementById('fallaBox').classList.toggle('hidden',!e.target.checked);
+let fotoData=null;
+document.getElementById('pFoto').onchange=e=>{
+  const f=e.target.files[0];if(!f){fotoData=null;return;}
+  const r=new FileReader();
+  r.onload=ev=>{fotoData=ev.target.result;const img=document.getElementById('fotoPrev');img.src=fotoData;img.style.display='block';document.getElementById('fotoInfo').textContent=f.name+' · '+Math.round(f.size/1024)+' KB';};
+  r.readAsDataURL(f);
+};
+document.getElementById('btnGuardar').onclick=()=>{
+  const msg=document.getElementById('msgParte');
+  const maq=document.getElementById('pMaq').value, oper=document.getElementById('pOper').value.trim();
+  const hi=parseFloat(document.getElementById('pHi').value), ht=parseFloat(document.getElementById('pHt').value);
+  const ltsRaw=document.getElementById('pLts').value.trim();
+  const lts=ltsRaw===''?null:parseFloat(ltsRaw);
+  const falla=document.getElementById('pFalla').checked, desc=document.getElementById('pDesc').value.trim();
+  if(!oper){msg.className='msg err';msg.textContent='Indica el operador';return;}
+  if(isNaN(hi)||isNaN(ht)){msg.className='msg err';msg.textContent='Ingresa horómetro de inicio y término';return;}
+  if(ht<hi){msg.className='msg err';msg.textContent='El horómetro de término no puede ser menor al de inicio';return;}
+  // validar contra el horómetro más alto ya registrado para esta máquina
+  const ultHoro=horometroActual(maq);
+  if(ultHoro!==null && hi<ultHoro){
+    msg.className='msg err';
+    msg.textContent='El horómetro de inicio ('+fmt(hi)+' h) es menor al último registrado de '+maq+' ('+fmt(ultHoro)+' h). Revisa el dato.';
+    return;
+  }
+  if(falla&&!desc){msg.className='msg err';msg.textContent='Describe la falla antes de guardar';return;}
+  DB.partes.unshift({id:Date.now(),fecha:hoyISO(),operador:oper,maq:maq,hi:hi,ht:ht,lts:lts,
+    chk:{aceite:c_aceite.checked,refri:c_refri.checked,hidr:c_hidr.checked,neum:c_neum.checked,fugas:c_fugas.checked,engrase:c_engrase.checked},
+    falla:falla,desc:falla?desc:null,foto:falla?fotoData:null});
+  msg.className='msg ok';
+  msg.textContent='✓ Parte guardado'+(falla?'. ⚠ Se notificará al supervisor por la falla reportada.':'. Ya aparece en la máquina '+maq);
+  ['pHi','pHt','pLts','pDesc','pOper'].forEach(id=>document.getElementById(id).value='');
+  ['c_aceite','c_refri','c_hidr','c_neum','c_fugas','c_engrase'].forEach(id=>document.getElementById(id).checked=true);
+  document.getElementById('pFalla').checked=false;document.getElementById('fallaBox').classList.add('hidden');
+  document.getElementById('fotoPrev').style.display='none';document.getElementById('fotoInfo').textContent='';fotoData=null;
+  setTimeout(()=>{msg.style.display='none';},4000);
+};
+
+/* PRECIOS editables con fecha */
+function renderPrecios(){
+  const p=DB.precios;
+  document.getElementById('preciosPanel').innerHTML=`
+    <div class="precio-box">
+      <div class="lbl">Petróleo · $/litro</div>
+      <div class="precio-in"><input type="number" id="inPet" value="${p.petroleo}"><button onclick="guardarPrecio('petroleo')">Actualizar</button></div>
+      <div class="precio-fecha">Vigente desde ${fechaCorta(p.fecha_petroleo)}</div>
+    </div>
+    <div class="precio-box">
+      <div class="lbl">Bencina · $/litro</div>
+      <div class="precio-in"><input type="number" id="inBen" value="${p.bencina}"><button onclick="guardarPrecio('bencina')">Actualizar</button></div>
+      <div class="precio-fecha">Vigente desde ${fechaCorta(p.fecha_bencina)}</div>
+    </div>`;
+}
+function guardarPrecio(tipo){
+  const val=parseFloat(document.getElementById(tipo==='petroleo'?'inPet':'inBen').value);
+  if(isNaN(val)||val<=0)return;
+  DB.precios[tipo]=val;
+  DB.precios[tipo==='petroleo'?'fecha_petroleo':'fecha_bencina']=hoyISO();
+  renderPrecios();renderKpisGen();renderTabla();
+}
+
+/* ===== CARGA EXCEL DEL GPS ===== */
+document.getElementById('gpsFile').onchange=e=>{
+  const file=e.target.files[0];
+  const est=document.getElementById('gpsEstado');
+  if(!file)return;
+  est.className='gps-estado';est.textContent='Procesando '+file.name+'...';
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const data=new Uint8Array(ev.target.result);
+      const wb=XLSX.read(data,{type:'array',cellDates:true});
+      // buscar hoja GPS (o la primera con columna Distancia)
+      let hoja=wb.SheetNames.find(n=>n.toUpperCase()==='GPS')||wb.SheetNames[0];
+      const filas=XLSX.utils.sheet_to_json(wb.Sheets[hoja],{header:1});
+      if(!filas.length){est.className='gps-estado err';est.textContent='La hoja está vacía.';return;}
+      // localizar columnas por encabezado
+      const hdr=filas[0].map(x=>String(x||'').trim().toUpperCase());
+      const iCod=hdr.findIndex(h=>h==='GPS');
+      const iHrs=hdr.findIndex(h=>h.includes('HORAS MOTOR'));
+      const iDist=hdr.findIndex(h=>h.includes('DISTANCIA'));
+      if(iCod<0||iDist<0){est.className='gps-estado err';est.textContent='No encuentro las columnas GPS y Distancia. Revisa el formato del archivo.';return;}
+      // acumular por máquina
+      const acc={};
+      let nFilas=0;
+      for(let r=1;r<filas.length;r++){
+        const cod=filas[r][iCod];if(!cod)continue;
+        const c=String(cod).trim();
+        const dist=parseFloat(filas[r][iDist])||0;
+        const hrs=iHrs>=0?(parseFloat(filas[r][iHrs])||0):0;
+        if(!acc[c])acc[c]={dist:0,hrs:0,n:0};
+        acc[c].dist+=dist;acc[c].hrs+=hrs;acc[c].n++;nFilas++;
+      }
+      // aplicar a las máquinas conocidas
+      let actualizadas=0, desconocidas=[];
+      Object.keys(acc).forEach(cod=>{
+        const m=DB.maquinas.find(x=>x.maq===cod);
+        if(m){m.gps_dist=Math.round(acc[cod].dist*100)/100;m.gps_hrs=Math.round(acc[cod].hrs*100)/100;actualizadas++;}
+        else desconocidas.push(cod);
+      });
+      DB.precios.fecha_gps=hoyISO();
+      est.className='gps-estado';
+      est.innerHTML='✓ '+nFilas+' filas procesadas · '+actualizadas+' máquinas actualizadas'+
+        (desconocidas.length?' · <span style="color:var(--ambar)">sin match: '+desconocidas.join(', ')+'</span>':'')+
+        '<br>Actualizado '+fechaCorta(hoyISO());
+      renderKpisGen();renderTabla();
+    }catch(err){
+      est.className='gps-estado err';est.textContent='Error al leer el archivo: '+err.message;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+};
+
+/* ===== EDITAR FECHAS RT / GASES ===== */
+let maqEditando=null;
+function esTractor(m){return m.tipo==='TRACTOR';}
+function abrirModalFecha(cod){
+  const m=DB.maquinas.find(x=>x.maq===cod);if(!m)return;
+  maqEditando=cod;
+  document.getElementById('modalTit').textContent='Datos de '+m.maq;
+  document.getElementById('modalSub').textContent=m.marca+' '+m.modelo+' · '+m.patente;
+  document.getElementById('editRT').value=m.rt_fecha||'';
+  document.getElementById('editGases').value=m.gases_fecha||'';
+  // aceite: tractores por horas, camionetas por km
+  const tract=esTractor(m);
+  document.getElementById('aceiteKm').style.display=tract?'none':'block';
+  document.getElementById('aceiteHr').style.display=tract?'block':'none';
+  document.getElementById('editIntKm').value=m.aceite_int_km||'';
+  document.getElementById('editUltKm').value=m.aceite_ult_km||'';
+  document.getElementById('editIntHr').value=m.aceite_int_hr||'';
+  document.getElementById('editUltHr').value=m.aceite_ult_hr||'';
+  document.getElementById('modalFecha').classList.add('act');
+}
+function cerrarModal(){document.getElementById('modalFecha').classList.remove('act');maqEditando=null;}
+function guardarFechas(){
+  if(!maqEditando)return;
+  const m=DB.maquinas.find(x=>x.maq===maqEditando);
+  const rt=document.getElementById('editRT').value, gs=document.getElementById('editGases').value;
+  if(rt)m.rt_fecha=rt;
+  if(gs)m.gases_fecha=gs;
+  if(esTractor(m)){
+    const iHr=parseFloat(document.getElementById('editIntHr').value);
+    const uHr=parseFloat(document.getElementById('editUltHr').value);
+    m.aceite_int_hr=isNaN(iHr)?null:iHr;
+    m.aceite_ult_hr=isNaN(uHr)?null:uHr;
+  }else{
+    const iKm=parseFloat(document.getElementById('editIntKm').value);
+    const uKm=parseFloat(document.getElementById('editUltKm').value);
+    m.aceite_int_km=isNaN(iKm)?null:iKm;
+    m.aceite_ult_km=isNaN(uKm)?null:uKm;
+  }
+  cerrarModal();renderAlertas();renderKpisGen();renderTabla();
+}
+document.getElementById('modalFecha').onclick=e=>{if(e.target.id==='modalFecha')cerrarModal();};
+
+/* horómetro más alto cargado en los partes de una máquina */
+function horometroActual(cod){
+  const ps=DB.partes.filter(p=>p.maq===cod);
+  let max=0;
+  ps.forEach(p=>{if(typeof p.ht==='number'&&p.ht>max)max=p.ht;});
+  return max>0?max:null;
+}
+/* horas trabajadas acumuladas según los partes (término - inicio) */
+function horasTrabajadas(cod){
+  const ps=DB.partes.filter(p=>p.maq===cod);
+  let h=0;
+  ps.forEach(p=>{if(typeof p.ht==='number'&&typeof p.hi==='number'&&p.ht>=p.hi)h+=(p.ht-p.hi);});
+  return h;
+}
+/* costo total de una máquina: combustible estimado + mantención/gastos */
+function costoTotalMaq(m){
+  return combEstimado(m)+(m.mant||0);
+}
+/* costo por hora trabajada (null si no hay horas registradas) */
+function costoPorHora(m){
+  const h=horasTrabajadas(m.maq);
+  if(h<=0)return null;
+  return costoTotalMaq(m)/h;
+}
+/* estado de cambio de aceite: tractor por horas, camioneta por km */
+function estadoAceite(m){
+  if(esTractor(m)){
+    if(!m.aceite_int_hr||m.aceite_ult_hr==null)return null; // sin config
+    const actual=horometroActual(m.maq);
+    if(actual==null)return null; // sin lecturas
+    const proximo=m.aceite_ult_hr+m.aceite_int_hr;
+    const faltan=proximo-actual;
+    return {unidad:'h',faltan:Math.round(faltan),margen:30};
+  }else{
+    if(!m.aceite_int_km||m.aceite_ult_km==null)return null;
+    const actual=(typeof m.kmact==='number'&&m.kmact>0)?m.kmact:null;
+    if(actual==null)return null;
+    const proximo=m.aceite_ult_km+m.aceite_int_km;
+    const faltan=proximo-actual;
+    return {unidad:'km',faltan:Math.round(faltan),margen:500};
+  }
+}
+
+/* ALERTAS */
+/* permiso de circulación: tractores vencen 1-sep, autos/camionetas 1-mar.
+   Aviso amarillo desde el 15 del mes anterior al vencimiento. */
+function permisoDe(m){
+  const mesVenc=esTractor(m)?9:3; // sep tractores, mar autos/camionetas
+  // próximo 1 del mes de vencimiento a partir de hoy
+  let y=HOY.getFullYear();
+  let venc=new Date(y,mesVenc-1,1);venc.setHours(0,0,0,0);
+  if(venc<HOY){venc=new Date(y+1,mesVenc-1,1);venc.setHours(0,0,0,0);}
+  const dias=Math.round((venc-HOY)/86400000);
+  // inicio del aviso: 15 del mes anterior al vencimiento
+  const aviso=new Date(venc.getFullYear(),venc.getMonth()-1,15);aviso.setHours(0,0,0,0);
+  let nivel='verde';
+  if(dias<0)nivel='rojo';
+  else if(HOY>=aviso)nivel='ambar';
+  return {dias, nivel, venc};
+}
+
+function alertasDeMaquina(m){
+  const arr=[];
+  if(m.estado==='FUERA DE SERVICIO')arr.push({nivel:'rojo',tipo:'Fuera de servicio',dias:null,orden:-99999});
+  const dRT=diasHasta(m.rt_fecha);if(dRT!==null)arr.push({nivel:nivelDias(dRT),tipo:'Revisión técnica',dias:dRT,orden:dRT});
+  const dG=diasHasta(m.gases_fecha);if(dG!==null)arr.push({nivel:nivelDias(dG),tipo:'Gases y contaminantes',dias:dG,orden:dG});
+  const pc=permisoDe(m);
+  if(pc.nivel!=='verde')arr.push({nivel:pc.nivel,tipo:'Permiso de circulación',dias:pc.dias,orden:pc.dias});
+  const ac=estadoAceite(m);
+  if(ac){
+    const u=ac.unidad;
+    if(ac.faltan<0)arr.push({nivel:'rojo',tipo:'Cambio de aceite pasado',dias:null,kmtxt:fmt(Math.abs(ac.faltan))+' '+u+' pasados',orden:-50000});
+    else if(ac.faltan<ac.margen)arr.push({nivel:'ambar',tipo:'Cambio de aceite próximo',dias:null,kmtxt:'faltan '+fmt(ac.faltan)+' '+u,orden:-1000});
+  }
+  return arr;
+}
+function semaforoMaquina(m){const a=alertasDeMaquina(m);if(a.some(x=>x.nivel==='rojo'))return'rojo';if(a.some(x=>x.nivel==='ambar'))return'ambar';return'verde';}
+function renderAlertas(){
+  const cont=document.getElementById('panelAlertas');let items=[];
+  DB.maquinas.forEach(m=>alertasDeMaquina(m).forEach(a=>{if(a.nivel!=='verde')items.push({...a,maq:m.maq,ubic:m.ubic});}));
+  items.sort((x,y)=>x.orden-y.orden);
+  if(!items.length){cont.innerHTML='<div class="alerta-empty">Sin alertas activas. Toda la flota al día.</div>';return;}
+  cont.innerHTML=items.map(a=>`<div class="alerta"><span class="dot d-${a.nivel}"></span><span class="maq">${a.maq}</span><span class="tipo">${a.tipo} · ${a.ubic}</span><span class="dias ${a.nivel}">${a.kmtxt||textoDias(a.dias)}</span></div>`).join('');
+}
+function renderKpisGen(){
+  const m=DB.maquinas;
+  const combEst=m.reduce((s,x)=>s+combEstimado(x),0);
+  const mant=m.reduce((s,x)=>s+(x.mant||0),0);
+  const rojo=m.filter(x=>semaforoMaquina(x)==='rojo').length,ambar=m.filter(x=>semaforoMaquina(x)==='ambar').length;
+  // gastos fijos mensuales (cuotas + GPS) recalculados en vivo
+  const f=DB.fijos;
+  const gwm=cuotasPagadas(f.gwm.ini,f.gwm.fin,f.gwm.dia);
+  const mx=cuotasPagadas(f.maxus.ini,f.maxus.fin,f.maxus.dia);
+  // solo cuentan las cuotas cuya fecha ya venció (pagadas), + GPS mensual siempre activo
+  const gpsMes=f.gps_unit*f.gps_count;
+  const cuotasVigentes=(gwm.pagadas>0?f.gwm.cuota*f.gwm.unidades:0)+(mx.pagadas>0?f.maxus.cuota*f.maxus.unidades:0);
+  const fijoMes=gpsMes+cuotasVigentes;
+  document.getElementById('kpisGen').innerHTML=[
+    {lbl:'Flota total',val:m.length,foot:'unidades'},
+    {lbl:'Requieren atención',val:rojo+ambar,foot:rojo+' críticas · '+ambar+' por vencer'},
+    {lbl:'Operativas',val:m.filter(x=>x.estado==='OPERATIVA').length,foot:'en servicio'},
+    {lbl:'Combustible (GPS)',val:CLP(combEst),foot:'estimado'},
+    {lbl:'Mantención',val:CLP(mant),foot:'acumulado'},
+    {lbl:'Fijos del mes',val:CLP(fijoMes),foot:'cuotas vigentes + GPS'},
+    {lbl:'Costo total',val:CLP(combEst+mant+fijoMes),foot:'comb + mant + fijos'},
+  ].map(x=>`<div class="kpi"><div class="lbl">${x.lbl}</div><div class="val">${x.val}</div><div class="foot">${x.foot}</div></div>`).join('');
+}
+
+/* TABLA */
+function gastosDeResp(resp){return DB.gastos.filter(g=>g.resp===resp);}
+let fUbic='TODAS',fTipo='TODOS',fEstado='TODOS',expandido=null;
+function renderFiltros(){
+  const ubic=['TODAS',...new Set(DB.maquinas.map(m=>m.ubic))];
+  const tipo=['TODOS',...new Set(DB.maquinas.map(m=>m.tipo))];
+  const estado=['TODOS','OPERATIVA','EN MANTENCIÓN','FUERA DE SERVICIO'];
+  const g=(arr,cur,attr)=>arr.map(v=>`<button data-${attr}="${v}" class="${v===cur?'act':''}">${v}</button>`).join('');
+  document.getElementById('filtros').innerHTML=`<div class="grp">${g(ubic,fUbic,'ubic')}</div><span class="sep"></span><div class="grp">${g(tipo,fTipo,'tipo')}</div><span class="sep"></span><div class="grp">${g(estado,fEstado,'estado')}</div>`;
+  document.querySelectorAll('#filtros button').forEach(b=>{
+    b.onclick=()=>{if(b.dataset.ubic!==undefined)fUbic=b.dataset.ubic;if(b.dataset.tipo!==undefined)fTipo=b.dataset.tipo;if(b.dataset.estado!==undefined)fEstado=b.dataset.estado;expandido=null;renderFiltros();renderTabla();};
+  });
+}
+function partesDe(cod){return DB.partes.filter(p=>p.maq===cod).sort((a,b)=>b.fecha.localeCompare(a.fecha));}
+function renderTabla(){
+  document.querySelector('#tblMaq thead').innerHTML=`<tr>
+    <th>Estado</th><th>Responsable</th><th>Comb.</th><th>Ubicación</th><th>RT</th><th>Gases</th><th>Permiso</th>
+    <th class="num">Comb. GPS</th><th class="num">Comb. cargado</th><th class="num">Mantención</th><th class="num">Total</th><th class="num">$/hora</th></tr>`;
+  const lista=DB.maquinas
+    .filter(m=>fUbic==='TODAS'||m.ubic===fUbic).filter(m=>fTipo==='TODOS'||m.tipo===fTipo).filter(m=>fEstado==='TODOS'||m.estado===fEstado)
+    .sort((a,b)=>{const o={rojo:0,ambar:1,verde:2};return o[semaforoMaquina(a)]-o[semaforoMaquina(b)]||combEstimado(b)-combEstimado(a);});
+  const tb=document.querySelector('#tblMaq tbody');
+  if(!lista.length){tb.innerHTML='<tr><td colspan="12" class="alerta-empty">Sin máquinas para este filtro.</td></tr>';return;}
+  tb.innerHTML=lista.map(m=>{
+    const sem=semaforoMaquina(m);
+    const cell=d=>{if(d===null)return'<span class="no-uso">—</span>';const nv=nivelDias(d);return`<span class="dias ${nv}">${d<0?'venc. '+Math.abs(d)+'d':d+' d'}</span>`;};
+    const est=combEstimado(m);
+    const carg=combCargado(m);
+    const combLabel=m.comb_tipo?(m.comb_tipo==='BENCINA'?'Bencina':'Petróleo'):'—';
+    const totMaq=est+(m.mant||0);
+    let row=`<tr class="mrow" data-maq="${m.maq}">
+      <td><span class="semaf d-${sem}"></span></td><td><b>${m.resp}</b><br><span class="mini" style="font-size:10.5px">${m.maq}</span> <span class="edit-fecha" onclick="event.stopPropagation();abrirModalFecha('${m.maq}')">fechas</span></td><td>${combLabel}</td><td>${m.ubic}</td>
+      <td>${cell(diasHasta(m.rt_fecha))}</td><td>${cell(diasHasta(m.gases_fecha))}</td>
+      <td>${(function(){const pc=permisoDe(m);const nv=pc.nivel==='verde'?'verde':pc.nivel;return`<span class="dias ${nv}">${pc.dias<0?'venc. '+Math.abs(pc.dias)+'d':pc.dias+' d'}</span>`;})()}</td>
+      <td class="num">${est?CLP(est):'<span class="no-uso">—</span>'}</td>
+      <td class="num">${carg?CLP(carg.monto):'<span class="no-uso">sin dato</span>'}</td>
+      <td class="num">${CLP(m.mant)}</td><td class="num"><b>${CLP(totMaq)}</b></td><td class="num">${(function(){const cph=costoPorHora(m);return cph?CLP(cph):'<span class="no-uso">—</span>';})()}</td></tr>`;
+    if(expandido===m.maq)row+=filaExpandida(m);
+    return row;
+  }).join('');
+  document.querySelectorAll('#tblMaq tr.mrow').forEach(tr=>{tr.onclick=()=>{expandido=expandido===tr.dataset.maq?null:tr.dataset.maq;renderTabla();};});
+}
+function filaExpandida(m){
+  const gs=gastosDeResp(m.resp).slice().sort((a,b)=>b.fecha.localeCompare(a.fecha));
+  const sumG=gs.reduce((s,x)=>s+x.monto,0);
+  let costosHtml=gs.length?gs.map(x=>`<div class="exp-line"><span class="k mini">${x.fecha} · ${x.motivo}</span><span class="v">${CLP(x.monto)}</span></div>`).join(''):'<div class="no-uso">Sin gastos registrados.</div>';
+  costosHtml+=`<div class="exp-line tot"><span class="k">Total detallado (${gs.length})</span><span class="v">${CLP(sumG)}</span></div>`;
+
+  // comparación combustible
+  const est=combEstimado(m), carg=combCargado(m);
+  let compHtml='';
+  if(est){
+    const litrosEst=m.gps_dist/m.rendimiento;
+    compHtml=`<div class="comp-box">
+      <div class="comp-row"><span>Estimado GPS (${fmt(m.gps_dist)} km ÷ ${m.rendimiento} km/lt)</span><span class="v">${fmt(litrosEst)} L · ${CLP(est)}</span></div>`;
+    if(carg){
+      const dif=carg.monto-est;
+      const cls=dif>0?'dif-pos':'dif-neg';
+      compHtml+=`<div class="comp-row"><span>Cargado real (partes)</span><span class="v">${fmt(carg.litros)} L · ${CLP(carg.monto)}</span></div>
+        <div class="comp-row"><span>Diferencia cargado − estimado</span><span class="v ${cls}">${dif>0?'+':''}${CLP(dif)}</span></div>`;
+    }else{
+      compHtml+=`<div class="comp-row"><span class="no-uso">Cargado real: sin litros medidos aún</span><span></span></div>`;
+    }
+    compHtml+=`</div>`;
+  }
+
+  const ps=partesDe(m.maq);
+  let usoHtml;
+  if(ps.length){
+    const totH=ps.reduce((s,p)=>s+(p.ht-p.hi),0);
+    const totL=ps.reduce((s,p)=>s+(p.lts||0),0);
+    const lph=totH>0&&totL>0?(totL/totH):null;
+    usoHtml=ps.map(p=>{
+      const h=(p.ht-p.hi);
+      const l=(p.lts&&h>0)?(p.lts/h).toFixed(1):'—';
+      const ltsTxt=p.lts?p.lts+' L · '+l+' L/h':'sin litros';
+      const f=p.falla?` <span class="falla-tag">falla</span>`:'';
+      const btnDel=` <span class="btn-borrar" onclick="event.stopPropagation();borrarParte('${p.id}')">borrar</span>`;
+      let line=`<div class="exp-line"><span class="k mini">${p.fecha} · ${p.operador}${f}${btnDel}</span><span class="v">${h.toFixed(1)} h · ${ltsTxt}</span></div>`;
+      if(p.falla&&p.desc)line+=`<div class="mini" style="color:var(--rojo);padding:2px 0">↳ ${p.desc}</div>`;
+      if(p.falla&&p.foto)line+=`<img class="foto-mini" src="${p.foto}" onclick="window.open('').document.write('<img src=\\''+this.src+'\\' style=max-width:100%>')">`;
+      return line;
+    }).join('');
+    usoHtml+=`<div class="exp-line tot"><span class="k">Acumulado · ${ps.length} partes</span><span class="v">${totH.toFixed(1)} h${lph?' · '+lph.toFixed(1)+' L/h':''}</span></div>`;
+  }else usoHtml='<div class="no-uso">Sin partes de checklist todavía.</div>';
+
+  // costo por hora
+  const hTrab=horasTrabajadas(m.maq);
+  const cph=costoPorHora(m);
+  let cphHtml;
+  if(cph){
+    cphHtml=`<div class="comp-box">
+      <div class="comp-row"><span>Costo total (comb + mant)</span><span class="v">${CLP(costoTotalMaq(m))}</span></div>
+      <div class="comp-row"><span>Horas trabajadas (partes)</span><span class="v">${hTrab.toFixed(1)} h</span></div>
+      <div class="comp-row"><span><b>Costo por hora</b></span><span class="v"><b>${CLP(cph)}/h</b></span></div>
+    </div>`;
+  }else{
+    cphHtml='<div class="no-uso">Sin horas trabajadas registradas. Carga partes diarios para calcular el costo por hora.</div>';
+  }
+
+  // estado cambio de aceite
+  const ac=estadoAceite(m);
+  let aceiteHtml;
+  if(ac){
+    const u=ac.unidad;
+    const cls=ac.faltan<0?'dif-pos':(ac.faltan<ac.margen?'dif-pos':'dif-neg');
+    const txt=ac.faltan<0?fmt(Math.abs(ac.faltan))+' '+u+' pasados':'faltan '+fmt(ac.faltan)+' '+u;
+    const base=esTractor(m)
+      ? `intervalo ${fmt(m.aceite_int_hr)} h · último a ${fmt(m.aceite_ult_hr)} h · horómetro ${fmt(horometroActual(m.maq))} h`
+      : `intervalo ${fmt(m.aceite_int_km)} km · último a ${fmt(m.aceite_ult_km)} km · actual ${fmt(m.kmact)} km`;
+    aceiteHtml=`<div class="comp-box"><div class="comp-row"><span>Próximo cambio</span><span class="v ${cls}">${txt}</span></div><div class="comp-row"><span class="mini">${base}</span></div></div>`;
+  }else{
+    aceiteHtml=`<div class="no-uso">Cambio de aceite sin configurar. Toca "datos" en la fila para definir intervalo y último cambio.</div>`;
+  }
+
+  return `<tr class="expand"><td colspan="12"><div class="exp-inner">
+    <div class="exp-box"><h4>Combustible · GPS vs cargado</h4>${compHtml||'<div class="no-uso">Sin datos de GPS.</div>'}<div style="margin-top:12px"></div><h4>Cambio de aceite</h4>${aceiteHtml}<div style="margin-top:12px"></div><h4>Costos registrados</h4>${costosHtml}</div>
+    <div class="exp-box"><h4>Uso operativo · checklist</h4>${usoHtml}<div style="margin-top:12px"></div><h4>Costo por hora</h4>${cphHtml}</div></div></td></tr>`;
+}
+
+/* FIJOS */
+function cuotasPagadas(iniStr,finStr,dia){
+  const[iy,im]=iniStr.split('-').map(Number),[fy,fm]=finStr.split('-').map(Number);
+  const total=(fy-iy)*12+(fm-im);let pagadas=0;
+  for(let k=0;k<total;k++){const y=iy+Math.floor((im-1+k)/12),mo=(im-1+k)%12;const fp=new Date(y,mo,dia);fp.setHours(0,0,0,0);if(fp<=HOY)pagadas++;}
+  return{total,pagadas};
+}
+function renderFijos(){
+  const f=DB.fijos;
+  const gpsMes=f.gps_unit*f.gps_count,gwmMes=f.gwm.cuota*f.gwm.unidades,mxMes=f.maxus.cuota*f.maxus.unidades;
+  document.getElementById('kpisFijos').innerHTML=[
+    {lbl:'GPS mensual',val:CLP(gpsMes),foot:f.gps_count+' equipos'},
+    {lbl:'Cuota GWM',val:CLP(gwmMes),foot:f.gwm.unidades+' camionetas'},
+    {lbl:'Cuota Maxus',val:CLP(mxMes),foot:f.maxus.unidades+' camionetas'},
+    {lbl:'Total fijo mensual',val:CLP(gpsMes+gwmMes+mxMes),foot:'GPS + cuotas'},
+  ].map(x=>`<div class="kpi"><div class="lbl">${x.lbl}</div><div class="val">${x.val}</div><div class="foot">${x.foot}</div></div>`).join('');
+  const gwm=cuotasPagadas(f.gwm.ini,f.gwm.fin,f.gwm.dia),mx=cuotasPagadas(f.maxus.ini,f.maxus.fin,f.maxus.dia);
+  const pct=o=>o.total?Math.round(o.pagadas/o.total*100):0;
+  const cardCuota=(t,u,o,c,i,fn)=>`<div class="cardf"><h3>${t}<span class="tag">${u} unid.</span></h3>
+    <div class="rowf"><span>Cuota mensual c/u</span><span class="v">${CLP(c)}</span></div>
+    <div class="rowf"><span>Cargo mensual total</span><span class="v">${CLP(c*u)}</span></div>
+    <div class="rowf"><span>Vigencia</span><span class="v">${i} a ${fn}</span></div>
+    <div class="rowf"><span>Cuotas pagadas</span><span class="v">${o.pagadas} de ${o.total}</span></div>
+    <div class="rowf"><span>Restantes</span><span class="v">${o.total-o.pagadas}</span></div>
+    <div class="bar"><div class="bar-fill" style="width:${Math.max(pct(o),4)}%">${pct(o)}%</div></div>
+    <div class="barlbl">avance del contrato</div></div>`;
+  const cardGps=`<div class="cardf"><h3>GPS<span class="tag">${f.gps_count} equipos</span></h3>
+    <div class="rowf"><span>Valor por equipo</span><span class="v">${CLP(f.gps_unit)}</span></div>
+    <div class="rowf"><span>Cargo mensual total</span><span class="v">${CLP(gpsMes)}</span></div>
+    <div class="rowf"><span>Modalidad</span><span class="v">Mensual recurrente</span></div>
+    <div class="bar"><div class="bar-fill" style="width:100%">mensual</div></div>
+    <div class="barlbl">servicio activo, se factura cada mes</div></div>`;
+  document.getElementById('cardsFijos').innerHTML=cardCuota('Cuota GWM',f.gwm.unidades,gwm,f.gwm.cuota,f.gwm.ini,f.gwm.fin)+cardCuota('Cuota Maxus',f.maxus.unidades,mx,f.maxus.cuota,f.maxus.ini,f.maxus.fin)+cardGps;
+}
+
+renderFiltros();
+</script>
+</body>
+</html>
