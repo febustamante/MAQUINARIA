@@ -286,6 +286,12 @@
   <div class="modal">
     <h3 id="modalTit">Actualizar datos</h3>
     <div class="msub" id="modalSub"></div>
+    <label>Estado de la máquina</label>
+    <select id="editEstado">
+      <option value="OPERATIVA">OPERATIVA</option>
+      <option value="EN MANTENCIÓN">EN MANTENCIÓN</option>
+      <option value="FUERA DE SERVICIO">FUERA DE SERVICIO</option>
+    </select>
     <label>Vencimiento revisión técnica</label>
     <input type="date" id="editRT">
     <label>Vencimiento gases y contaminantes</label>
@@ -349,6 +355,30 @@ async function cargarMaquinasSupabase(){
   }catch(e){console.warn('Fallo conexión Supabase:',e);return false;}
 }
 
+/* Lee los gastos desde Supabase y recalcula la mantención de cada máquina */
+async function cargarGastosSupabase(){
+  if(!sb) return false;
+  try{
+    const {data,error}=await sb.from('maq_gastos').select('*').order('fecha',{ascending:false});
+    if(error){console.warn('Error leyendo maq_gastos:',error.message);return false;}
+    if(!data) return false;
+    // reemplazar gastos locales por los de la base
+    DB.gastos=data.map(g=>({
+      id:g.id, maq:g.maq, resp:g.maq, fecha:g.fecha, monto:Number(g.monto),
+      motivo:g.motivo, factura:g.factura
+    }));
+    // recalcular la mantención de cada máquina sumando sus gastos
+    const sumaPorMaq={};
+    DB.gastos.forEach(g=>{ sumaPorMaq[g.maq]=(sumaPorMaq[g.maq]||0)+g.monto; });
+    DB.maquinas.forEach(m=>{
+      m.mant=sumaPorMaq[m.maq]||0;
+      m.total=(m.comb||0)+m.mant;
+    });
+    console.log('✓ '+data.length+' gastos cargados desde Supabase');
+    return true;
+  }catch(e){console.warn('Fallo cargando gastos:',e);return false;}
+}
+
 /* util */
 const HOY=new Date();HOY.setHours(0,0,0,0);
 const fmt=n=>new Intl.NumberFormat('es-CL').format(Math.round(n));
@@ -368,8 +398,9 @@ async function entrar(){
   else if(pin===DB.acceso.operador){ROL='operador';}
   else{msg.className='msg err';msg.textContent='PIN incorrecto';return;}
   msg.className='msg';msg.textContent='Conectando...';
-  // leer máquinas actualizadas desde Supabase (si falla, sigue con las locales)
+  // leer máquinas y gastos actualizados desde Supabase
   await cargarMaquinasSupabase();
+  await cargarGastosSupabase();
   document.getElementById('login').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   aplicarRol();
@@ -443,7 +474,7 @@ function initGastos(){
   };
   document.getElementById('btnGasto').onclick=guardarGasto;
 }
-function guardarGasto(){
+async function guardarGasto(){
   const msg=document.getElementById('msgGasto');
   const cod=document.getElementById('gMaq').value;
   const fecha=document.getElementById('gFecha').value;
@@ -457,10 +488,19 @@ function guardarGasto(){
   if(!fecha){msg.className='msg err';msg.textContent='Indica la fecha';return;}
   if(isNaN(monto)||monto<=0){msg.className='msg err';msg.textContent='Ingresa un monto válido';return;}
   const m=DB.maquinas.find(x=>x.maq===cod);
-  // el gasto se guarda con el resp de la máquina (así aparece en su detalle)
-  const nuevo={id:'g'+Date.now(),fecha:fecha,resp:m.resp,maq:cod,monto:monto,motivo:motivo,factura:factura||null};
+
+  msg.className='msg';msg.textContent='Guardando...';
+  let nuevoId='g'+Date.now();
+  // guardar en Supabase
+  if(sb){
+    const {data,error}=await sb.from('maq_gastos')
+      .insert({maq:cod,fecha:fecha,monto:monto,motivo:motivo,factura:factura||null})
+      .select().single();
+    if(error){msg.className='msg err';msg.textContent='Error al guardar: '+error.message;return;}
+    if(data)nuevoId=data.id;
+  }
+  const nuevo={id:nuevoId,fecha:fecha,resp:cod,maq:cod,monto:monto,motivo:motivo,factura:factura||null};
   DB.gastos.unshift(nuevo);
-  // sumar al total de mantención de la máquina
   m.mant=(m.mant||0)+monto;
   m.total=(m.total||0)+monto;
   msg.className='msg ok';msg.textContent='✓ Gasto guardado en '+cod+' · '+CLP(monto);
@@ -474,10 +514,10 @@ function guardarGasto(){
 }
 let gastosSesion=[];
 function renderGastosRecientes(){
-  // reconstruir desde los gastos que tienen maq (los cargados en sesión)
-  const recientes=DB.gastos.filter(g=>g.maq).slice(0,15);
+  // los 15 gastos más recientes (ya vienen ordenados de Supabase)
+  const recientes=DB.gastos.slice(0,15);
   const cont=document.getElementById('gastosRecientes');
-  if(!recientes.length){cont.innerHTML='<div class="no-uso">Aún no has cargado gastos en esta sesión.</div>';return;}
+  if(!recientes.length){cont.innerHTML='<div class="no-uso">Aún no hay gastos cargados.</div>';return;}
   cont.innerHTML=`<table class="tbl-maq" style="min-width:auto"><thead><tr>
     <th>Fecha</th><th>Máquina</th><th>Motivo</th><th>N° factura</th><th class="num">Monto</th><th></th></tr></thead><tbody>`+
     recientes.map(g=>`<tr><td>${g.fecha}</td><td><b>${g.maq}</b></td><td>${g.motivo}</td><td>${g.factura||'—'}</td><td class="num">${CLP(g.monto)}</td><td><span class="btn-borrar" onclick="borrarGasto('${g.id}')">borrar</span></td></tr>`).join('')+
@@ -491,11 +531,16 @@ function borrarParte(id){
   DB.partes.splice(i,1);
   renderTabla();renderKpisGen();
 }
-function borrarGasto(id){
-  const i=DB.gastos.findIndex(g=>g.id===id);
+async function borrarGasto(id){
+  const i=DB.gastos.findIndex(g=>String(g.id)===String(id));
   if(i<0)return;
   const g=DB.gastos[i];
   if(!confirm('¿Borrar este gasto?\n'+g.maq+' · '+g.motivo+' · '+CLP(g.monto)+'\nEsta acción no se puede deshacer.'))return;
+  // borrar en Supabase
+  if(sb){
+    const {error}=await sb.from('maq_gastos').delete().eq('id',g.id);
+    if(error){alert('Error al borrar: '+error.message);return;}
+  }
   // restar del total de la máquina
   const m=DB.maquinas.find(x=>x.maq===g.maq);
   if(m){m.mant=(m.mant||0)-g.monto;m.total=(m.total||0)-g.monto;}
@@ -630,6 +675,7 @@ function abrirModalFecha(cod){
   maqEditando=cod;
   document.getElementById('modalTit').textContent='Datos de '+m.maq;
   document.getElementById('modalSub').textContent=m.marca+' '+m.modelo+' · '+m.patente;
+  document.getElementById('editEstado').value=m.estado||'OPERATIVA';
   document.getElementById('editRT').value=m.rt_fecha||'';
   document.getElementById('editGases').value=m.gases_fecha||'';
   // aceite: tractores por horas, camionetas por km
@@ -643,10 +689,12 @@ function abrirModalFecha(cod){
   document.getElementById('modalFecha').classList.add('act');
 }
 function cerrarModal(){document.getElementById('modalFecha').classList.remove('act');maqEditando=null;}
-function guardarFechas(){
+async function guardarFechas(){
   if(!maqEditando)return;
   const m=DB.maquinas.find(x=>x.maq===maqEditando);
+  const estado=document.getElementById('editEstado').value;
   const rt=document.getElementById('editRT').value, gs=document.getElementById('editGases').value;
+  m.estado=estado;
   if(rt)m.rt_fecha=rt;
   if(gs)m.gases_fecha=gs;
   if(esTractor(m)){
@@ -659,6 +707,15 @@ function guardarFechas(){
     const uKm=parseFloat(document.getElementById('editUltKm').value);
     m.aceite_int_km=isNaN(iKm)?null:iKm;
     m.aceite_ult_km=isNaN(uKm)?null:uKm;
+  }
+  // guardar en Supabase
+  if(sb){
+    const {error}=await sb.from('maq_maquinas').update({
+      estado:m.estado, rt_fecha:m.rt_fecha||null, gases_fecha:m.gases_fecha||null,
+      aceite_int_km:m.aceite_int_km, aceite_ult_km:m.aceite_ult_km,
+      aceite_int_hr:m.aceite_int_hr, aceite_ult_hr:m.aceite_ult_hr
+    }).eq('maq',m.maq);
+    if(error){alert('Error al guardar en la base: '+error.message);return;}
   }
   cerrarModal();renderAlertas();renderKpisGen();renderTabla();
 }
@@ -773,7 +830,7 @@ function renderKpisGen(){
 }
 
 /* TABLA */
-function gastosDeResp(resp){return DB.gastos.filter(g=>g.resp===resp);}
+function gastosDeMaq(cod){return DB.gastos.filter(g=>(g.maq||g.resp)===cod);}
 let fUbic='TODAS',fTipo='TODOS',fEstado='TODOS',expandido=null;
 function renderFiltros(){
   const ubic=['TODAS',...new Set(DB.maquinas.map(m=>m.ubic))];
@@ -803,7 +860,7 @@ function renderTabla(){
     const combLabel=m.comb_tipo?(m.comb_tipo==='BENCINA'?'Bencina':'Petróleo'):'—';
     const totMaq=est+(m.mant||0);
     let row=`<tr class="mrow" data-maq="${m.maq}">
-      <td><span class="semaf d-${sem}"></span></td><td><b>${m.resp}</b><br><span class="mini" style="font-size:10.5px">${m.maq}</span> <span class="edit-fecha" onclick="event.stopPropagation();abrirModalFecha('${m.maq}')">fechas</span></td><td>${combLabel}</td><td>${m.ubic}</td>
+      <td><span class="semaf d-${sem}"></span></td><td><b>${m.resp}</b><br><span class="mini" style="font-size:10.5px">${m.maq}</span> <span class="edit-fecha" onclick="event.stopPropagation();abrirModalFecha('${m.maq}')">editar</span></td><td>${combLabel}</td><td>${m.ubic}</td>
       <td>${cell(diasHasta(m.rt_fecha))}</td><td>${cell(diasHasta(m.gases_fecha))}</td>
       <td>${(function(){const pc=permisoDe(m);const nv=pc.nivel==='verde'?'verde':pc.nivel;return`<span class="dias ${nv}">${pc.dias<0?'venc. '+Math.abs(pc.dias)+'d':pc.dias+' d'}</span>`;})()}</td>
       <td class="num">${est?CLP(est):'<span class="no-uso">—</span>'}</td>
@@ -815,7 +872,7 @@ function renderTabla(){
   document.querySelectorAll('#tblMaq tr.mrow').forEach(tr=>{tr.onclick=()=>{expandido=expandido===tr.dataset.maq?null:tr.dataset.maq;renderTabla();};});
 }
 function filaExpandida(m){
-  const gs=gastosDeResp(m.resp).slice().sort((a,b)=>b.fecha.localeCompare(a.fecha));
+  const gs=gastosDeMaq(m.maq).slice().sort((a,b)=>b.fecha.localeCompare(a.fecha));
   const sumG=gs.reduce((s,x)=>s+x.monto,0);
   let costosHtml=gs.length?gs.map(x=>`<div class="exp-line"><span class="k mini">${x.fecha} · ${x.motivo}</span><span class="v">${CLP(x.monto)}</span></div>`).join(''):'<div class="no-uso">Sin gastos registrados.</div>';
   costosHtml+=`<div class="exp-line tot"><span class="k">Total detallado (${gs.length})</span><span class="v">${CLP(sumG)}</span></div>`;
