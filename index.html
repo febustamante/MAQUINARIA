@@ -127,6 +127,9 @@
   .edit-fecha{color:var(--oro);cursor:pointer;font-size:11px;font-weight:600;margin-left:4px;text-decoration:none;border-bottom:1px dashed var(--oro);}
   .btn-borrar{color:var(--rojo);cursor:pointer;font-size:10.5px;font-weight:600;margin-left:6px;border-bottom:1px dashed var(--rojo);}
   .btn-borrar:hover{opacity:.7;}
+  .fj-maquinas{max-height:180px;overflow-y:auto;border:1px solid var(--linea);border-radius:7px;padding:8px;margin-top:4px;}
+  .fj-chk{display:block;font-size:12.5px;padding:4px 2px;font-weight:400;color:var(--txt);cursor:pointer;}
+  .fj-chk input{width:auto;margin-right:8px;}
   /* login */
   .login-box{max-width:340px;margin:60px auto;background:var(--panel);border:1px solid var(--linea);border-radius:12px;padding:30px 26px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.06);}
   .login-box h1{font-size:20px;color:var(--pizarra);}
@@ -296,8 +299,7 @@
   </div><!-- fin #app -->
 </div>
 
-<!-- MODAL editar fechas -->
-<div class="modal-bg" id="modalFecha">
+<!-- MODAL editar fechas --><div class="modal-bg" id="modalFecha">
   <div class="modal">
     <h3 id="modalTit">Actualizar datos</h3>
     <div class="msub" id="modalSub"></div>
@@ -326,6 +328,44 @@
     <div class="modal-btns">
       <button class="mb-cancel" onclick="cerrarModal()">Cancelar</button>
       <button class="mb-save" onclick="guardarFechas()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL gasto fijo -->
+<div class="modal-bg" id="modalFijo">
+  <div class="modal" style="max-width:420px">
+    <h3>Gasto fijo</h3>
+    <div class="msub">Cuotas o indefinido, atribuido a máquinas</div>
+    <label>Nombre del gasto</label>
+    <input id="fjNombre" placeholder="Ej: Cuota GWM, GPS, Seguro">
+    <div class="grid2">
+      <div><label>Monto</label><input type="number" id="fjMonto" placeholder="0"></div>
+      <div><label>El monto es</label>
+        <select id="fjMontoEs">
+          <option value="POR_MAQUINA">Por máquina</option>
+          <option value="TOTAL">Total (repartir)</option>
+        </select>
+      </div>
+    </div>
+    <div class="grid2">
+      <div><label>Día de cobro</label><input type="number" id="fjDia" min="1" max="31" value="1"></div>
+      <div><label>Fecha inicio</label><input type="date" id="fjInicio"></div>
+    </div>
+    <label>Duración</label>
+    <select id="fjTipo" onchange="toggleCuotas()">
+      <option value="INDEFINIDO">Indefinido (mensual permanente)</option>
+      <option value="CUOTAS">Cuotas fijas</option>
+    </select>
+    <div id="fjCuotasBox" style="display:none">
+      <label>Número de cuotas</label>
+      <input type="number" id="fjCuotas" placeholder="Ej: 36">
+    </div>
+    <label>Máquinas a las que se atribuye</label>
+    <div id="fjMaquinas" class="fj-maquinas"></div>
+    <div class="modal-btns">
+      <button class="mb-cancel" onclick="cerrarFijo()">Cancelar</button>
+      <button class="mb-save" onclick="guardarFijo()">Guardar</button>
     </div>
   </div>
 </div>
@@ -427,6 +467,23 @@ async function cargarSinUsoSupabase(){
   }catch(e){console.warn('Fallo cargando sin_uso:',e);return false;}
 }
 
+/* Lee los gastos fijos administrables desde Supabase */
+DB.fijosDB=[];
+async function cargarFijosSupabase(){
+  if(!sb) return false;
+  try{
+    const {data,error}=await sb.from('maq_fijos').select('*').order('nombre');
+    if(error){console.warn('Error leyendo maq_fijos:',error.message);return false;}
+    DB.fijosDB=(data||[]).map(f=>({
+      id:f.id, nombre:f.nombre, monto:Number(f.monto), monto_es:f.monto_es,
+      dia_cobro:f.dia_cobro, fecha_inicio:f.fecha_inicio, tipo:f.tipo,
+      n_cuotas:f.n_cuotas, maquinas:f.maquinas||[], activo:f.activo
+    }));
+    console.log('✓ '+DB.fijosDB.length+' gastos fijos cargados');
+    return true;
+  }catch(e){console.warn('Fallo cargando fijos:',e);return false;}
+}
+
 /* util */
 const HOY=new Date();HOY.setHours(0,0,0,0);
 const fmt=n=>new Intl.NumberFormat('es-CL').format(Math.round(n));
@@ -451,6 +508,7 @@ async function entrar(){
   await cargarGastosSupabase();
   await cargarPartesSupabase();
   await cargarSinUsoSupabase();
+  await cargarFijosSupabase();
   document.getElementById('login').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   aplicarRol();
@@ -979,14 +1037,12 @@ function renderKpisGen(){
   const combEst=m.reduce((s,x)=>s+combEstimado(x),0);
   const mant=m.reduce((s,x)=>s+(x.mant||0),0);
   const rojo=m.filter(x=>semaforoMaquina(x)==='rojo').length,ambar=m.filter(x=>semaforoMaquina(x)==='ambar').length;
-  // gastos fijos mensuales (cuotas + GPS) recalculados en vivo
-  const f=DB.fijos;
-  const gwm=cuotasPagadas(f.gwm.ini,f.gwm.fin,f.gwm.dia);
-  const mx=cuotasPagadas(f.maxus.ini,f.maxus.fin,f.maxus.dia);
-  // solo cuentan las cuotas cuya fecha ya venció (pagadas), + GPS mensual siempre activo
-  const gpsMes=f.gps_unit*f.gps_count;
-  const cuotasVigentes=(gwm.pagadas>0?f.gwm.cuota*f.gwm.unidades:0)+(mx.pagadas>0?f.maxus.cuota*f.maxus.unidades:0);
-  const fijoMes=gpsMes+cuotasVigentes;
+  // gastos fijos mensuales vigentes (desde la tabla administrable)
+  let fijoMes=0;
+  (DB.fijosDB||[]).filter(f=>f.activo!==false).forEach(f=>{
+    const c=cuotasFijo(f);
+    if(f.tipo==='INDEFINIDO'||(c.total&&c.pagadas<c.total)) fijoMes+=cargoMensualFijo(f);
+  });
   document.getElementById('kpisGen').innerHTML=[
     {lbl:'Flota total',val:m.length,foot:'unidades'},
     {lbl:'Requieren atención',val:rojo+ambar,foot:rojo+' críticas · '+ambar+' por vencer'},
@@ -1119,38 +1175,138 @@ function filaExpandida(m){
 }
 
 /* FIJOS */
-function cuotasPagadas(iniStr,finStr,dia){
-  const[iy,im]=iniStr.split('-').map(Number),[fy,fm]=finStr.split('-').map(Number);
-  const total=(fy-iy)*12+(fm-im);let pagadas=0;
-  for(let k=0;k<total;k++){const y=iy+Math.floor((im-1+k)/12),mo=(im-1+k)%12;const fp=new Date(y,mo,dia);fp.setHours(0,0,0,0);if(fp<=HOY)pagadas++;}
-  return{total,pagadas};
+/* cuotas pagadas de un gasto fijo según fecha inicio, día y n_cuotas */
+function cuotasFijo(f){
+  const [iy,im]=f.fecha_inicio.split('-').map(Number);
+  const dia=f.dia_cobro||1;
+  let pagadas=0;
+  const limite=f.tipo==='CUOTAS'?f.n_cuotas:9999;
+  for(let k=0;k<limite;k++){
+    const y=iy+Math.floor((im-1+k)/12), mo=(im-1+k)%12;
+    const fp=new Date(y,mo,dia); fp.setHours(0,0,0,0);
+    if(fp<=HOY) pagadas++; else break;
+  }
+  return {pagadas, total:f.tipo==='CUOTAS'?f.n_cuotas:null};
+}
+/* cargo mensual de un gasto fijo (según monto por máquina o total) */
+function cargoMensualFijo(f){
+  const n=(f.maquinas||[]).length||1;
+  return f.monto_es==='TOTAL' ? f.monto : f.monto*n;
 }
 function renderFijos(){
-  const f=DB.fijos;
-  const gpsMes=f.gps_unit*f.gps_count,gwmMes=f.gwm.cuota*f.gwm.unidades,mxMes=f.maxus.cuota*f.maxus.unidades;
-  document.getElementById('kpisFijos').innerHTML=[
-    {lbl:'GPS mensual',val:CLP(gpsMes),foot:f.gps_count+' equipos'},
-    {lbl:'Cuota GWM',val:CLP(gwmMes),foot:f.gwm.unidades+' camionetas'},
-    {lbl:'Cuota Maxus',val:CLP(mxMes),foot:f.maxus.unidades+' camionetas'},
-    {lbl:'Total fijo mensual',val:CLP(gpsMes+gwmMes+mxMes),foot:'GPS + cuotas'},
-  ].map(x=>`<div class="kpi"><div class="lbl">${x.lbl}</div><div class="val">${x.val}</div><div class="foot">${x.foot}</div></div>`).join('');
-  const gwm=cuotasPagadas(f.gwm.ini,f.gwm.fin,f.gwm.dia),mx=cuotasPagadas(f.maxus.ini,f.maxus.fin,f.maxus.dia);
-  const pct=o=>o.total?Math.round(o.pagadas/o.total*100):0;
-  const cardCuota=(t,u,o,c,i,fn)=>`<div class="cardf"><h3>${t}<span class="tag">${u} unid.</span></h3>
-    <div class="rowf"><span>Cuota mensual c/u</span><span class="v">${CLP(c)}</span></div>
-    <div class="rowf"><span>Cargo mensual total</span><span class="v">${CLP(c*u)}</span></div>
-    <div class="rowf"><span>Vigencia</span><span class="v">${i} a ${fn}</span></div>
-    <div class="rowf"><span>Cuotas pagadas</span><span class="v">${o.pagadas} de ${o.total}</span></div>
-    <div class="rowf"><span>Restantes</span><span class="v">${o.total-o.pagadas}</span></div>
-    <div class="bar"><div class="bar-fill" style="width:${Math.max(pct(o),4)}%">${pct(o)}%</div></div>
-    <div class="barlbl">avance del contrato</div></div>`;
-  const cardGps=`<div class="cardf"><h3>GPS<span class="tag">${f.gps_count} equipos</span></h3>
-    <div class="rowf"><span>Valor por equipo</span><span class="v">${CLP(f.gps_unit)}</span></div>
-    <div class="rowf"><span>Cargo mensual total</span><span class="v">${CLP(gpsMes)}</span></div>
-    <div class="rowf"><span>Modalidad</span><span class="v">Mensual recurrente</span></div>
-    <div class="bar"><div class="bar-fill" style="width:100%">mensual</div></div>
-    <div class="barlbl">servicio activo, se factura cada mes</div></div>`;
-  document.getElementById('cardsFijos').innerHTML=cardCuota('Cuota GWM',f.gwm.unidades,gwm,f.gwm.cuota,f.gwm.ini,f.gwm.fin)+cardCuota('Cuota Maxus',f.maxus.unidades,mx,f.maxus.cuota,f.maxus.ini,f.maxus.fin)+cardGps;
+  const fijos=DB.fijosDB.filter(f=>f.activo!==false);
+  // KPIs: suma de cargos mensuales vigentes
+  let totalMes=0;
+  fijos.forEach(f=>{
+    const c=cuotasFijo(f);
+    // cuenta si es indefinido, o si aún quedan cuotas por pagar
+    const vigente=f.tipo==='INDEFINIDO'||(c.total&&c.pagadas<c.total)||(c.total&&c.pagadas>0);
+    if(f.tipo==='INDEFINIDO'||(c.total&&c.pagadas<c.total)) totalMes+=cargoMensualFijo(f);
+  });
+  document.getElementById('kpisFijos').innerHTML=
+    `<div class="kpi"><div class="lbl">Gastos fijos activos</div><div class="val">${fijos.length}</div><div class="foot">conceptos</div></div>`+
+    `<div class="kpi"><div class="lbl">Cargo mensual total</div><div class="val">${CLP(totalMes)}</div><div class="foot">de los vigentes</div></div>`+
+    `<div class="kpi" style="display:flex;align-items:center;justify-content:center"><button class="btn" style="margin:0" onclick="abrirFijo()">+ Nuevo gasto fijo</button></div>`;
+
+  if(!fijos.length){
+    document.getElementById('cardsFijos').innerHTML='<div class="no-uso">No hay gastos fijos. Agrega uno con el botón de arriba.</div>';
+    return;
+  }
+  document.getElementById('cardsFijos').innerHTML=fijos.map(f=>{
+    const c=cuotasFijo(f);
+    const n=(f.maquinas||[]).length;
+    const cargoMes=cargoMensualFijo(f);
+    let avance='';
+    if(f.tipo==='CUOTAS'){
+      const pct=c.total?Math.round(c.pagadas/c.total*100):0;
+      avance=`<div class="rowf"><span>Cuotas pagadas</span><span class="v">${c.pagadas} de ${c.total}</span></div>
+        <div class="rowf"><span>Restantes</span><span class="v">${c.total-c.pagadas}</span></div>
+        <div class="bar"><div class="bar-fill" style="width:${Math.max(pct,4)}%">${pct}%</div></div>
+        <div class="barlbl">avance del contrato</div>`;
+    }else{
+      avance=`<div class="bar"><div class="bar-fill" style="width:100%">mensual</div></div>
+        <div class="barlbl">indefinido · se cobra cada mes</div>`;
+    }
+    return `<div class="cardf"><h3>${f.nombre}<span class="tag">${n} máq.</span></h3>
+      <div class="rowf"><span>Monto ${f.monto_es==='TOTAL'?'(total)':'por máquina'}</span><span class="v">${CLP(f.monto)}</span></div>
+      <div class="rowf"><span>Cargo mensual total</span><span class="v">${CLP(cargoMes)}</span></div>
+      <div class="rowf"><span>Cobro</span><span class="v">día ${f.dia_cobro} · desde ${f.fecha_inicio}</span></div>
+      ${avance}
+      <div style="margin-top:10px;text-align:right">
+        <span class="edit-fecha" onclick="abrirFijo(${f.id})">editar</span>
+        <span class="btn-borrar" style="margin-left:10px" onclick="borrarFijo(${f.id})">eliminar</span>
+      </div></div>`;
+  }).join('');
+}
+
+/* ===== ALTA / EDICIÓN DE GASTO FIJO ===== */
+let fijoEditando=null;
+function abrirFijo(id){
+  fijoEditando=id||null;
+  const f=id?DB.fijosDB.find(x=>x.id===id):null;
+  document.getElementById('fjNombre').value=f?f.nombre:'';
+  document.getElementById('fjMonto').value=f?f.monto:'';
+  document.getElementById('fjMontoEs').value=f?f.monto_es:'POR_MAQUINA';
+  document.getElementById('fjDia').value=f?f.dia_cobro:1;
+  document.getElementById('fjInicio').value=f?f.fecha_inicio:hoyISO();
+  document.getElementById('fjTipo').value=f?f.tipo:'INDEFINIDO';
+  document.getElementById('fjCuotas').value=f&&f.n_cuotas?f.n_cuotas:'';
+  toggleCuotas();
+  // lista de máquinas con checkbox
+  const sel=new Set(f?f.maquinas:[]);
+  document.getElementById('fjMaquinas').innerHTML=DB.maquinas
+    .slice().sort((a,b)=>a.maq.localeCompare(b.maq,undefined,{numeric:true}))
+    .map(m=>`<label class="fj-chk"><input type="checkbox" value="${m.maq}" ${sel.has(m.maq)?'checked':''}> ${m.maq} · ${m.resp}</label>`).join('');
+  document.getElementById('modalFijo').classList.add('act');
+}
+function cerrarFijo(){document.getElementById('modalFijo').classList.remove('act');fijoEditando=null;}
+function toggleCuotas(){
+  document.getElementById('fjCuotasBox').style.display=document.getElementById('fjTipo').value==='CUOTAS'?'block':'none';
+}
+async function guardarFijo(){
+  const nombre=document.getElementById('fjNombre').value.trim();
+  const monto=parseFloat(document.getElementById('fjMonto').value);
+  const monto_es=document.getElementById('fjMontoEs').value;
+  const dia=parseInt(document.getElementById('fjDia').value)||1;
+  const inicio=document.getElementById('fjInicio').value;
+  const tipo=document.getElementById('fjTipo').value;
+  const ncuotas=tipo==='CUOTAS'?(parseInt(document.getElementById('fjCuotas').value)||null):null;
+  const maquinas=[...document.querySelectorAll('#fjMaquinas input:checked')].map(x=>x.value);
+  if(!nombre){alert('Ponle un nombre al gasto fijo');return;}
+  if(isNaN(monto)||monto<=0){alert('Ingresa un monto válido');return;}
+  if(!inicio){alert('Indica la fecha de inicio');return;}
+  if(tipo==='CUOTAS'&&!ncuotas){alert('Indica el número de cuotas');return;}
+  if(!maquinas.length){alert('Selecciona al menos una máquina');return;}
+  const registro={nombre,monto,monto_es,dia_cobro:dia,fecha_inicio:inicio,tipo,n_cuotas:ncuotas,maquinas,activo:true};
+  if(sb){
+    if(fijoEditando){
+      const {error}=await sb.from('maq_fijos').update(registro).eq('id',fijoEditando);
+      if(error){alert('Error: '+error.message);return;}
+    }else{
+      const {data,error}=await sb.from('maq_fijos').insert(registro).select().single();
+      if(error){alert('Error: '+error.message);return;}
+      registro.id=data?data.id:Date.now();
+    }
+  }else{ registro.id=fijoEditando||Date.now(); }
+  // actualizar en memoria
+  if(fijoEditando){
+    const i=DB.fijosDB.findIndex(x=>x.id===fijoEditando);
+    if(i>=0)DB.fijosDB[i]={...registro,id:fijoEditando};
+  }else{
+    DB.fijosDB.push(registro);
+  }
+  cerrarFijo();renderFijos();
+}
+async function borrarFijo(id){
+  const f=DB.fijosDB.find(x=>x.id===id);
+  if(!f)return;
+  if(!confirm('¿Eliminar el gasto fijo "'+f.nombre+'"?'))return;
+  if(sb){
+    const {error}=await sb.from('maq_fijos').delete().eq('id',id);
+    if(error){alert('Error: '+error.message);return;}
+  }
+  DB.fijosDB=DB.fijosDB.filter(x=>x.id!==id);
+  renderFijos();
 }
 
 renderFiltros();
