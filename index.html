@@ -173,8 +173,6 @@
     </div>
     <div class="fecha">Hoy<br><b id="hoy"></b></div>
   </header>
-  <div class="demo">Modo demostración · los partes se guardan solo en esta sesión</div>
-
   <div class="tabs">
     <div class="tab act" data-v="parte">Parte diario</div>
     <div class="tab tab-ger" data-v="maq">Máquinas · costos y uso</div>
@@ -552,8 +550,6 @@ function aplicarRol(){
   document.getElementById('rolActual').textContent=esGer?'Gerencia':'Operador';
   // pestañas gerenciales solo para gerencia
   document.querySelectorAll('.tab-ger').forEach(t=>t.style.display=esGer?'':'none');
-  // el demo solo lo ve gerencia (al operador no le importa)
-  const demo=document.querySelector('.demo'); if(demo)demo.style.display=esGer?'':'none';
   // asegurar que el operador quede en la pestaña parte diario
   if(!esGer){
     document.querySelectorAll('.tab').forEach(x=>x.classList.remove('act'));
