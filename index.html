@@ -527,14 +527,39 @@ document.getElementById('hoy').textContent=HOY.toLocaleDateString('es-CL',{day:'
 
 /* ===== LOGIN / ROLES ===== */
 let ROL=null; // 'operador' | 'gerencia'
+let USUARIO=null; // datos de la persona que entró
 async function entrar(){
   const pin=document.getElementById('pinInput').value.trim();
   const msg=document.getElementById('pinMsg');
-  if(pin===DB.acceso.gerencia){ROL='gerencia';}
-  else if(pin===DB.acceso.operador){ROL='operador';}
-  else{msg.className='msg err';msg.textContent='PIN incorrecto';return;}
+  if(!pin){msg.className='msg err';msg.textContent='Ingresa tu PIN';return;}
+  msg.className='msg';msg.textContent='Verificando...';
+
+  // 1) Buscar el PIN en la tabla central de usuarios
+  let encontrado=false;
+  if(sb){
+    try{
+      const {data,error}=await sb.from('usuarios_sj').select('*').eq('pin',pin).eq('activo',true).maybeSingle();
+      if(!error && data){
+        encontrado=true;
+        if(!data.rol_maquinaria){
+          msg.className='msg err';
+          msg.textContent=data.nombre+', no tienes acceso a Maquinaria. Consulta con gerencia.';
+          return;
+        }
+        ROL=data.rol_maquinaria;      // 'operador' o 'gerencia'
+        USUARIO={nombre:data.nombre, campos:data.campos||[]};
+      }
+    }catch(e){console.warn('No se pudo consultar usuarios_sj, uso PINs locales',e);}
+  }
+
+  // 2) Respaldo local (si no hay conexión o el PIN no está en la tabla aún)
+  if(!encontrado){
+    if(pin===DB.acceso.gerencia){ROL='gerencia';USUARIO={nombre:'Gerencia',campos:[]};}
+    else if(pin===DB.acceso.operador){ROL='operador';USUARIO={nombre:'Operador',campos:[]};}
+    else{msg.className='msg err';msg.textContent='PIN incorrecto';return;}
+  }
+
   msg.className='msg';msg.textContent='Conectando...';
-  // leer datos actualizados desde Supabase
   await cargarMaquinasSupabase();
   await cargarGastosSupabase();
   await cargarPartesSupabase();
@@ -547,7 +572,7 @@ async function entrar(){
 function salir(){location.reload();}
 function aplicarRol(){
   const esGer=ROL==='gerencia';
-  document.getElementById('rolActual').textContent=esGer?'Gerencia':'Operador';
+  document.getElementById('rolActual').textContent=(USUARIO&&USUARIO.nombre?USUARIO.nombre+' · ':'')+(esGer?'Gerencia':'Operador');
   // pestañas gerenciales solo para gerencia
   document.querySelectorAll('.tab-ger').forEach(t=>t.style.display=esGer?'':'none');
   // asegurar que el operador quede en la pestaña parte diario
