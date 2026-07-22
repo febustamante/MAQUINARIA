@@ -82,10 +82,10 @@
   .filtros button.act{background:var(--pizarra);color:#fff;border-color:var(--pizarra);}
   .filtros .sep{width:1px;height:20px;background:var(--linea);margin:0 4px;}
   .tbl-wrap{overflow-x:auto;}
-  .tbl-maq{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--linea);border-radius:8px;overflow:hidden;min-width:820px;}
-  .tbl-maq th{background:var(--pizarra);color:#fff;padding:9px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.4px;text-align:left;font-weight:600;}
+  .tbl-maq{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--linea);border-radius:8px;overflow:hidden;}
+  .tbl-maq th{background:var(--pizarra);color:#fff;padding:12px 14px;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;text-align:left;font-weight:600;}
   .tbl-maq th.num,.tbl-maq td.num{text-align:right;font-variant-numeric:tabular-nums;}
-  .tbl-maq td{padding:9px 10px;border-bottom:1px solid var(--linea);font-size:12px;}
+  .tbl-maq td{padding:13px 14px;border-bottom:1px solid var(--linea);font-size:12.5px;}
   .tbl-maq tr.mrow{cursor:pointer;}
   .tbl-maq tr.mrow:hover td{background:#f5f6f5;}
   .tbl-maq tr:last-child td{border-bottom:none;}
@@ -296,9 +296,17 @@
       <button class="btn" id="btnGasto">Guardar gasto</button>
       <div id="msgGasto" class="msg"></div>
     </div>
-    <div class="stitle">Últimos gastos cargados en esta sesión</div>
+    <div class="stitle">Historial de gastos</div>
     <div class="card" style="max-width:none">
-      <div id="gastosRecientes"><div class="no-uso">Aún no has cargado gastos en esta sesión.</div></div>
+      <div class="filtros" style="margin-bottom:12px;align-items:flex-end;flex-wrap:wrap;gap:10px">
+        <div><label style="margin:0 0 4px">Máquina</label>
+          <select id="fgMaq" onchange="renderGastosRecientes()" style="width:auto"><option value="">Todas</option></select>
+        </div>
+        <div><label style="margin:0 0 4px">Desde</label><input type="date" id="fgDesde" onchange="renderGastosRecientes()" style="width:auto"></div>
+        <div><label style="margin:0 0 4px">Hasta</label><input type="date" id="fgHasta" onchange="renderGastosRecientes()" style="width:auto"></div>
+        <button onclick="limpiarFiltroGastos()" style="border:1px solid var(--linea);background:#fff;color:var(--pizarra);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px">Limpiar</button>
+      </div>
+      <div id="gastosRecientes"><div class="no-uso">Cargando gastos...</div></div>
     </div>
   </div>
 
@@ -315,6 +323,28 @@
     Cambio de aceite: tractores por horas de motor (horómetro de los partes), camionetas por kilómetros. Estructura lista para Supabase.
   </footer>
   </div><!-- fin #app -->
+</div>
+
+<!-- MODAL editar gasto -->
+<div class="modal-bg" id="modalGasto">
+  <div class="modal">
+    <h3>Editar gasto</h3>
+    <div class="msub" id="egSub"></div>
+    <label>Máquina</label>
+    <select id="egMaq"></select>
+    <div class="grid2">
+      <div><label>Fecha</label><input type="date" id="egFecha"></div>
+      <div><label>Monto</label><input type="number" id="egMonto"></div>
+    </div>
+    <label>Motivo</label>
+    <input id="egMotivo">
+    <label>N° factura</label>
+    <input id="egFactura" placeholder="opcional">
+    <div class="modal-btns">
+      <button class="mb-cancel" onclick="document.getElementById('modalGasto').classList.remove('act')">Cancelar</button>
+      <button class="mb-save" onclick="guardarEdicionGasto()">Guardar cambios</button>
+    </div>
+  </div>
 </div>
 
 <!-- MODAL editar parte (solo gerencia) -->
@@ -857,15 +887,84 @@ async function guardarGasto(){
   setTimeout(()=>{msg.style.display='none';},4000);
 }
 let gastosSesion=[];
+let fgMaqInit=false;
+function initFiltroGastosMaq(){
+  if(fgMaqInit)return;
+  const sel=document.getElementById('fgMaq');
+  if(!sel)return;
+  const cods=DB.maquinas.slice().sort((a,b)=>a.maq.localeCompare(b.maq,undefined,{numeric:true}));
+  sel.innerHTML='<option value="">Todas</option>'+cods.map(m=>`<option value="${m.maq}">${m.maq} · ${m.resp}</option>`).join('');
+  fgMaqInit=true;
+}
+function limpiarFiltroGastos(){
+  document.getElementById('fgMaq').value='';
+  document.getElementById('fgDesde').value='';
+  document.getElementById('fgHasta').value='';
+  renderGastosRecientes();
+}
 function renderGastosRecientes(){
-  // los 15 gastos más recientes (ya vienen ordenados de Supabase)
-  const recientes=DB.gastos.slice(0,15);
+  initFiltroGastosMaq();
+  const fMaq=document.getElementById('fgMaq')?.value||'';
+  const fDesde=document.getElementById('fgDesde')?.value||'';
+  const fHasta=document.getElementById('fgHasta')?.value||'';
+  // filtrar todos los gastos de la base
+  let lista=DB.gastos.filter(g=>{
+    if(fMaq && (g.maq||g.resp)!==fMaq) return false;
+    if(fDesde && g.fecha<fDesde) return false;
+    if(fHasta && g.fecha>fHasta) return false;
+    return true;
+  });
   const cont=document.getElementById('gastosRecientes');
-  if(!recientes.length){cont.innerHTML='<div class="no-uso">Aún no hay gastos cargados.</div>';return;}
-  cont.innerHTML=`<table class="tbl-maq" style="min-width:auto"><thead><tr>
+  if(!lista.length){cont.innerHTML='<div class="no-uso">No hay gastos con esos filtros.</div>';return;}
+  const total=lista.reduce((s,g)=>s+g.monto,0);
+  cont.innerHTML=`<div class="mini" style="margin-bottom:8px">${lista.length} gasto(s) · total ${CLP(total)}</div>`+
+    `<table class="tbl-maq" style="min-width:auto"><thead><tr>
     <th>Fecha</th><th>Máquina</th><th>Motivo</th><th>N° factura</th><th class="num">Monto</th><th></th></tr></thead><tbody>`+
-    recientes.map(g=>`<tr><td>${g.fecha}</td><td><b>${g.maq}</b></td><td>${g.motivo}</td><td>${g.factura||'—'}</td><td class="num">${CLP(g.monto)}</td><td><span class="btn-borrar" onclick="borrarGasto('${g.id}')">borrar</span></td></tr>`).join('')+
+    lista.map(g=>`<tr><td>${g.fecha}</td><td><b>${g.maq||g.resp}</b></td><td>${g.motivo}</td><td>${g.factura||'—'}</td><td class="num">${CLP(g.monto)}</td>
+      <td><span class="edit-fecha" onclick="editarGasto('${g.id}')">editar</span> <span class="btn-borrar" onclick="borrarGasto('${g.id}')">borrar</span></td></tr>`).join('')+
     `</tbody></table>`;
+}
+let gastoEditando=null;
+function editarGasto(id){
+  const g=DB.gastos.find(x=>String(x.id)===String(id));
+  if(!g)return;
+  gastoEditando=id;
+  document.getElementById('egSub').textContent=(g.maq||g.resp)+' · '+g.fecha;
+  document.getElementById('egFecha').value=g.fecha;
+  document.getElementById('egMonto').value=g.monto;
+  document.getElementById('egMotivo').value=g.motivo||'';
+  document.getElementById('egFactura').value=g.factura||'';
+  // selector de máquina
+  const sel=document.getElementById('egMaq');
+  sel.innerHTML=DB.maquinas.slice().sort((a,b)=>a.maq.localeCompare(b.maq,undefined,{numeric:true}))
+    .map(m=>`<option value="${m.maq}" ${(g.maq||g.resp)===m.maq?'selected':''}>${m.maq} · ${m.resp}</option>`).join('');
+  document.getElementById('modalGasto').classList.add('act');
+}
+async function guardarEdicionGasto(){
+  if(!gastoEditando)return;
+  const g=DB.gastos.find(x=>String(x.id)===String(gastoEditando));
+  const nuevoMaq=document.getElementById('egMaq').value;
+  const fecha=document.getElementById('egFecha').value;
+  const monto=parseFloat(document.getElementById('egMonto').value);
+  const motivo=document.getElementById('egMotivo').value.trim();
+  const factura=document.getElementById('egFactura').value.trim();
+  if(isNaN(monto)||monto<=0){alert('Monto inválido');return;}
+  if(!fecha){alert('Indica la fecha');return;}
+  const maqAnterior=g.maq||g.resp, montoAnterior=g.monto;
+  if(sb){
+    const {error}=await sb.from('maq_gastos').update({maq:nuevoMaq,fecha:fecha,monto:monto,motivo:motivo,factura:factura||null}).eq('id',g.id);
+    if(error){alert('Error: '+error.message);return;}
+  }
+  // ajustar totales: restar de la máquina anterior, sumar a la nueva
+  const mAnt=DB.maquinas.find(x=>x.maq===maqAnterior);
+  if(mAnt){mAnt.mant=(mAnt.mant||0)-montoAnterior;mAnt.total=(mAnt.total||0)-montoAnterior;}
+  const mNue=DB.maquinas.find(x=>x.maq===nuevoMaq);
+  if(mNue){mNue.mant=(mNue.mant||0)+monto;mNue.total=(mNue.total||0)+monto;}
+  g.maq=nuevoMaq; g.resp=nuevoMaq; g.fecha=fecha; g.monto=monto; g.motivo=motivo; g.factura=factura||null;
+  document.getElementById('modalGasto').classList.remove('act');
+  gastoEditando=null;
+  renderGastosRecientes();
+  if(typeof renderTabla==='function')renderTabla();
 }
 async function borrarParte(id){
   const i=DB.partes.findIndex(p=>String(p.id)===String(id));
@@ -883,17 +982,16 @@ async function borrarGasto(id){
   const i=DB.gastos.findIndex(g=>String(g.id)===String(id));
   if(i<0)return;
   const g=DB.gastos[i];
-  if(!confirm('¿Borrar este gasto?\n'+g.maq+' · '+g.motivo+' · '+CLP(g.monto)+'\nEsta acción no se puede deshacer.'))return;
-  // borrar en Supabase
+  if(!confirm('¿Borrar este gasto?\n'+(g.maq||g.resp)+' · '+g.motivo+' · '+CLP(g.monto)+'\nEsta acción no se puede deshacer.'))return;
   if(sb){
     const {error}=await sb.from('maq_gastos').delete().eq('id',g.id);
     if(error){alert('Error al borrar: '+error.message);return;}
   }
-  // restar del total de la máquina
-  const m=DB.maquinas.find(x=>x.maq===g.maq);
+  const m=DB.maquinas.find(x=>x.maq===(g.maq||g.resp));
   if(m){m.mant=(m.mant||0)-g.monto;m.total=(m.total||0)-g.monto;}
   DB.gastos.splice(i,1);
   renderGastosRecientes();
+  if(typeof renderTabla==='function')renderTabla();
 }
 
 /* PARTE DIARIO */
@@ -1245,20 +1343,16 @@ function renderKpisGen(){
   const combEst=m.reduce((s,x)=>s+combEstimado(x),0);
   const mant=m.reduce((s,x)=>s+(x.mant||0),0);
   const rojo=m.filter(x=>semaforoMaquina(x)==='rojo').length,ambar=m.filter(x=>semaforoMaquina(x)==='ambar').length;
-  // gastos fijos mensuales vigentes (desde la tabla administrable)
   let fijoMes=0;
   (DB.fijosDB||[]).filter(f=>f.activo!==false).forEach(f=>{
     const c=cuotasFijo(f);
     if(f.tipo==='INDEFINIDO'||(c.total&&c.pagadas<c.total)) fijoMes+=cargoMensualFijo(f);
   });
   document.getElementById('kpisGen').innerHTML=[
-    {lbl:'Flota total',val:m.length,foot:'unidades'},
-    {lbl:'Requieren atención',val:rojo+ambar,foot:rojo+' críticas · '+ambar+' por vencer'},
-    {lbl:'Operativas',val:m.filter(x=>x.estado==='OPERATIVA').length,foot:'en servicio'},
-    {lbl:'Combustible (GPS)',val:CLP(combEst),foot:'estimado'},
-    {lbl:'Mantención',val:CLP(mant),foot:'acumulado'},
-    {lbl:'Fijos del mes',val:CLP(fijoMes),foot:'cuotas vigentes + GPS'},
-    {lbl:'Costo total',val:CLP(combEst+mant+fijoMes),foot:'comb + mant + fijos'},
+    {lbl:'Flota',val:m.length,foot:m.filter(x=>x.estado==='OPERATIVA').length+' operativas'},
+    {lbl:'Atención',val:rojo+ambar,foot:rojo+' críticas · '+ambar+' por vencer'},
+    {lbl:'Costo total flota',val:CLP(combEst+mant+fijoMes),foot:'comb + mant + fijos'},
+    {lbl:'Fijos del mes',val:CLP(fijoMes),foot:'vigentes'},
   ].map(x=>`<div class="kpi"><div class="lbl">${x.lbl}</div><div class="val">${x.val}</div><div class="foot">${x.foot}</div></div>`).join('');
 }
 
@@ -1278,27 +1372,34 @@ function renderFiltros(){
 function partesDe(cod){return DB.partes.filter(p=>p.maq===cod).sort((a,b)=>b.fecha.localeCompare(a.fecha));}
 function renderTabla(){
   document.querySelector('#tblMaq thead').innerHTML=`<tr>
-    <th>Estado</th><th>Responsable</th><th>Comb.</th><th>Ubicación</th><th>RT</th><th>Gases</th><th>Permiso</th>
-    <th class="num">Comb. GPS</th><th class="num">Comb. cargado</th><th class="num">Mantención</th><th class="num">Total</th><th class="num">$/hora</th></tr>`;
+    <th>Máquina</th><th>Estado</th><th>Alertas</th><th class="num">Costo total</th></tr>`;
   const lista=DB.maquinas
     .filter(m=>fUbic==='TODAS'||m.ubic===fUbic).filter(m=>fTipo==='TODOS'||m.tipo===fTipo).filter(m=>fEstado==='TODOS'||m.estado===fEstado)
     .sort((a,b)=>{const o={rojo:0,ambar:1,verde:2};return o[semaforoMaquina(a)]-o[semaforoMaquina(b)]||combEstimado(b)-combEstimado(a);});
   const tb=document.querySelector('#tblMaq tbody');
-  if(!lista.length){tb.innerHTML='<tr><td colspan="12" class="alerta-empty">Sin máquinas para este filtro.</td></tr>';return;}
+  if(!lista.length){tb.innerHTML='<tr><td colspan="4" class="alerta-empty">Sin máquinas para este filtro.</td></tr>';return;}
+  const estadoTxt={OPERATIVA:'Operativa','EN MANTENCIÓN':'En mantención','FUERA DE SERVICIO':'Fuera de servicio'};
   tb.innerHTML=lista.map(m=>{
     const sem=semaforoMaquina(m);
-    const cell=d=>{if(d===null)return'<span class="no-uso">—</span>';const nv=nivelDias(d);return`<span class="dias ${nv}">${d<0?'venc. '+Math.abs(d)+'d':d+' d'}</span>`;};
     const est=combEstimado(m);
-    const carg=combCargado(m);
-    const combLabel=m.comb_tipo?(m.comb_tipo==='BENCINA'?'Bencina':'Petróleo'):'—';
     const totMaq=est+(m.mant||0);
+    // resumen de alertas: cuántas cosas vencidas o por vencer
+    const alertas=[];
+    const dRT=diasHasta(m.rt_fecha), dGas=diasHasta(m.gases_fecha), pc=permisoDe(m);
+    if(dRT!==null && dRT<0)alertas.push('RT vencida');
+    else if(dRT!==null && dRT<=30)alertas.push('RT '+dRT+'d');
+    if(dGas!==null && dGas<0)alertas.push('Gases vencidos');
+    else if(dGas!==null && dGas<=30)alertas.push('Gases '+dGas+'d');
+    if(pc.dias<0)alertas.push('Permiso vencido');
+    let alertaCell;
+    if(m.estado==='FUERA DE SERVICIO')alertaCell='<span class="no-uso">—</span>';
+    else if(alertas.length)alertaCell=`<span class="dias rojo">${alertas.length} alerta${alertas.length>1?'s':''}</span>`;
+    else alertaCell='<span class="dias verde">al día</span>';
     let row=`<tr class="mrow" data-maq="${m.maq}">
-      <td><span class="semaf d-${sem}"></span></td><td><b>${m.resp}</b><br><span class="mini" style="font-size:10.5px">${m.maq}</span> <span class="edit-fecha" onclick="event.stopPropagation();abrirModalFecha('${m.maq}')">editar</span></td><td>${combLabel}</td><td>${m.ubic}</td>
-      <td>${cell(diasHasta(m.rt_fecha))}</td><td>${cell(diasHasta(m.gases_fecha))}</td>
-      <td>${(function(){const pc=permisoDe(m);const nv=pc.nivel==='verde'?'verde':pc.nivel;return`<span class="dias ${nv}">${pc.dias<0?'venc. '+Math.abs(pc.dias)+'d':pc.dias+' d'}</span>`;})()}</td>
-      <td class="num">${est?CLP(est):'<span class="no-uso">—</span>'}</td>
-      <td class="num">${carg?CLP(carg.monto):'<span class="no-uso">sin dato</span>'}</td>
-      <td class="num">${CLP(m.mant)}</td><td class="num"><b>${CLP(totMaq)}</b></td><td class="num">${(function(){const cph=costoPorHora(m);return cph?CLP(cph):'<span class="no-uso">—</span>';})()}</td></tr>`;
+      <td><b>${m.resp}</b><br><span class="mini" style="font-size:10.5px">${m.maq}</span></td>
+      <td><span class="semaf d-${sem}"></span> <span style="font-size:12px">${estadoTxt[m.estado]||m.estado}</span></td>
+      <td>${alertaCell}</td>
+      <td class="num"><b>${CLP(totMaq)}</b></td></tr>`;
     if(expandido===m.maq)row+=filaExpandida(m);
     return row;
   }).join('');
@@ -1377,8 +1478,23 @@ function filaExpandida(m){
     aceiteHtml=`<div class="no-uso">Cambio de aceite sin configurar. Toca "datos" en la fila para definir intervalo y último cambio.</div>`;
   }
 
-  return `<tr class="expand"><td colspan="12"><div class="exp-inner">
-    <div class="exp-box"><h4>Combustible · GPS vs cargado</h4>${compHtml||'<div class="no-uso">Sin datos de GPS.</div>'}<div style="margin-top:12px"></div><h4>Cambio de aceite</h4>${aceiteHtml}<div style="margin-top:12px"></div><h4>Costos registrados</h4>${costosHtml}</div>
+  // resumen de datos que antes estaban en columnas
+  const combLabel=m.comb_tipo?(m.comb_tipo==='BENCINA'?'Bencina':'Petróleo'):'—';
+  const cellDias=d=>{if(d===null)return'<span class="no-uso">—</span>';const nv=nivelDias(d);return`<span class="dias ${nv}">${d<0?'venc. '+Math.abs(d)+'d':d+' d'}</span>`;};
+  const pc=permisoDe(m);
+  const cphVal=costoPorHora(m);
+  const datosHtml=`<div class="comp-box">
+    <div class="comp-row"><span>Ubicación</span><span class="v">${m.ubic}</span></div>
+    <div class="comp-row"><span>Combustible</span><span class="v">${combLabel}</span></div>
+    <div class="comp-row"><span>Revisión técnica</span><span class="v">${cellDias(diasHasta(m.rt_fecha))}</span></div>
+    <div class="comp-row"><span>Gases</span><span class="v">${cellDias(diasHasta(m.gases_fecha))}</span></div>
+    <div class="comp-row"><span>Permiso circulación</span><span class="v"><span class="dias ${pc.nivel==='verde'?'verde':pc.nivel}">${pc.dias<0?'venc. '+Math.abs(pc.dias)+'d':pc.dias+' d'}</span></span></div>
+    <div class="comp-row"><span>Costo por hora</span><span class="v">${cphVal?CLP(cphVal)+'/h':'—'}</span></div>
+    <div class="comp-row" style="border:none;padding-top:8px"><span></span><span class="v"><span class="edit-fecha" onclick="event.stopPropagation();abrirModalFecha('${m.maq}')">editar datos de la máquina</span></span></div>
+  </div>`;
+
+  return `<tr class="expand"><td colspan="4"><div class="exp-inner">
+    <div class="exp-box"><h4>Datos y vencimientos</h4>${datosHtml}<div style="margin-top:12px"></div><h4>Combustible · GPS vs cargado</h4>${compHtml||'<div class="no-uso">Sin datos de GPS.</div>'}<div style="margin-top:12px"></div><h4>Cambio de aceite</h4>${aceiteHtml}<div style="margin-top:12px"></div><h4>Costos registrados</h4>${costosHtml}</div>
     <div class="exp-box"><h4>Uso operativo · checklist</h4>${usoHtml}<div style="margin-top:12px"></div><h4>Costo por hora</h4>${cphHtml}</div></div></td></tr>`;
 }
 
