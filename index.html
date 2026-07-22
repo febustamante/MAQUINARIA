@@ -198,12 +198,21 @@
     </div>
     <div class="card">
       <label style="margin-top:0">Checklist antes de arrancar</label>
-      <div class="chk-row"><span>Aceite motor</span><label class="switch"><input type="checkbox" id="c_aceite" checked><span class="slider"></span></label></div>
-      <div class="chk-row"><span>Refrigerante</span><label class="switch"><input type="checkbox" id="c_refri" checked><span class="slider"></span></label></div>
-      <div class="chk-row"><span>Hidráulico</span><label class="switch"><input type="checkbox" id="c_hidr" checked><span class="slider"></span></label></div>
-      <div class="chk-row"><span>Neumáticos</span><label class="switch"><input type="checkbox" id="c_neum" checked><span class="slider"></span></label></div>
-      <div class="chk-row"><span>Sin fugas visibles</span><label class="switch"><input type="checkbox" id="c_fugas" checked><span class="slider"></span></label></div>
-      <div class="chk-row"><span>Engrase al día</span><label class="switch"><input type="checkbox" id="c_engrase" checked><span class="slider"></span></label></div>
+      <div class="chk-row"><span>Aceite motor</span><label class="switch"><input type="checkbox" id="c_aceite" checked onchange="revisarChecklist()"><span class="slider"></span></label></div>
+      <div class="chk-row"><span>Refrigerante</span><label class="switch"><input type="checkbox" id="c_refri" checked onchange="revisarChecklist()"><span class="slider"></span></label></div>
+      <div class="chk-row"><span>Hidráulico</span><label class="switch"><input type="checkbox" id="c_hidr" checked onchange="revisarChecklist()"><span class="slider"></span></label></div>
+      <div class="chk-row"><span>Neumáticos</span><label class="switch"><input type="checkbox" id="c_neum" checked onchange="revisarChecklist()"><span class="slider"></span></label></div>
+      <div class="chk-row"><span>Sin fugas visibles</span><label class="switch"><input type="checkbox" id="c_fugas" checked onchange="revisarChecklist()"><span class="slider"></span></label></div>
+      <div class="chk-row"><span>Engrase al día</span><label class="switch"><input type="checkbox" id="c_engrase" checked onchange="revisarChecklist()"><span class="slider"></span></label></div>
+      <div class="chk-row"><span>Nivel de agua</span><label class="switch"><input type="checkbox" id="c_agua" checked onchange="revisarChecklist()"><span class="slider"></span></label></div>
+      <div class="chk-row"><span>Frenos</span><label class="switch"><input type="checkbox" id="c_frenos" checked onchange="revisarChecklist()"><span class="slider"></span></label></div>
+      <div class="chk-row"><span>Sistema de dirección</span><label class="switch"><input type="checkbox" id="c_direccion" checked onchange="revisarChecklist()"><span class="slider"></span></label></div>
+      <div class="chk-row"><span>Estado del cardán</span><label class="switch"><input type="checkbox" id="c_cardan" checked onchange="revisarChecklist()"><span class="slider"></span></label></div>
+      <div class="chk-row"><span>Luces</span><label class="switch"><input type="checkbox" id="c_luces" checked onchange="revisarChecklist()"><span class="slider"></span></label></div>
+      <div id="obsChkBox" class="hidden" style="margin-top:10px">
+        <label style="color:var(--rojo)">Observación del checklist (hay ítems en mal estado)</label>
+        <textarea id="obsChk" rows="2" placeholder="Describe qué ítem(s) están mal y el detalle"></textarea>
+      </div>
     </div>
     <div class="card">
       <div class="chk-row" style="border:none"><span>¿Tuvo alguna falla?</span><label class="switch"><input type="checkbox" id="pFalla"><span class="slider"></span></label></div>
@@ -477,7 +486,9 @@ async function cargarPartesSupabase(){
       hi:p.horo_inicio!=null?Number(p.horo_inicio):null,
       ht:p.horo_termino!=null?Number(p.horo_termino):null,
       lts:p.litros!=null?Number(p.litros):null,
-      chk:{aceite:p.chk_aceite,refri:p.chk_refri,hidr:p.chk_hidr,neum:p.chk_neum,fugas:p.chk_fugas,engrase:p.chk_engrase},
+      chk:{aceite:p.chk_aceite,refri:p.chk_refri,hidr:p.chk_hidr,neum:p.chk_neum,fugas:p.chk_fugas,engrase:p.chk_engrase,
+        agua:p.chk_agua,frenos:p.chk_frenos,direccion:p.chk_direccion,cardan:p.chk_cardan,luces:p.chk_luces},
+      obs_checklist:p.obs_checklist,
       falla:p.falla, desc:p.falla_desc, foto:p.foto_url, falla_resuelta:p.falla_resuelta||false
     }));
     console.log('✓ '+data.length+' partes cargados desde Supabase');
@@ -917,31 +928,45 @@ document.getElementById('btnGuardar').onclick=async()=>{
   }
   if(falla&&!desc){msg.className='msg err';msg.textContent='Describe la falla antes de guardar';return;}
 
-  const chk={aceite:c_aceite.checked,refri:c_refri.checked,hidr:c_hidr.checked,neum:c_neum.checked,fugas:c_fugas.checked,engrase:c_engrase.checked};
+  const chk={aceite:c_aceite.checked,refri:c_refri.checked,hidr:c_hidr.checked,neum:c_neum.checked,fugas:c_fugas.checked,engrase:c_engrase.checked,
+    agua:c_agua.checked,frenos:c_frenos.checked,direccion:c_direccion.checked,cardan:c_cardan.checked,luces:c_luces.checked};
+  const hayMaloChk=Object.values(chk).some(v=>!v);
+  const obsChk=document.getElementById('obsChk').value.trim();
+  if(hayMaloChk && !obsChk){msg.className='msg err';msg.textContent='Hay ítems del checklist en mal estado: escribe la observación.';return;}
   msg.className='msg';msg.textContent='Guardando...';
   let nuevoId=Date.now();
   if(sb){
     const {data,error}=await sb.from('maq_partes').insert({
       maq:maq, fecha:hoyISO(), operador:oper, horo_inicio:hi, horo_termino:ht, litros:lts,
       chk_aceite:chk.aceite, chk_refri:chk.refri, chk_hidr:chk.hidr, chk_neum:chk.neum, chk_fugas:chk.fugas, chk_engrase:chk.engrase,
+      chk_agua:chk.agua, chk_frenos:chk.frenos, chk_direccion:chk.direccion, chk_cardan:chk.cardan, chk_luces:chk.luces,
+      obs_checklist:hayMaloChk?obsChk:null,
       falla:falla, falla_desc:falla?desc:null, foto_url:falla?fotoData:null
     }).select().single();
     if(error){msg.className='msg err';msg.textContent='Error al guardar: '+error.message;return;}
     if(data)nuevoId=data.id;
   }
   DB.partes.unshift({id:nuevoId,fecha:hoyISO(),operador:oper,maq:maq,hi:hi,ht:ht,lts:lts,
-    chk:chk, falla:falla,desc:falla?desc:null,foto:falla?fotoData:null});
+    chk:chk, obs_checklist:hayMaloChk?obsChk:null, falla:falla,desc:falla?desc:null,foto:falla?fotoData:null});
   msg.className='msg ok';
   msg.textContent='✓ Parte guardado'+(falla?'. ⚠ Se notificará al supervisor por la falla reportada.':'. Ya aparece en la máquina '+maq);
   ['pHi','pHt','pLts','pDesc','pOper'].forEach(id=>document.getElementById(id).value='');
-  ['c_aceite','c_refri','c_hidr','c_neum','c_fugas','c_engrase'].forEach(id=>document.getElementById(id).checked=true);
+  ['c_aceite','c_refri','c_hidr','c_neum','c_fugas','c_engrase','c_agua','c_frenos','c_direccion','c_cardan','c_luces'].forEach(id=>document.getElementById(id).checked=true);
+  document.getElementById('obsChk').value='';document.getElementById('obsChkBox').classList.add('hidden');
   document.getElementById('pFalla').checked=false;document.getElementById('fallaBox').classList.add('hidden');
   document.getElementById('fotoPrev').style.display='none';document.getElementById('fotoInfo').textContent='';fotoData=null;
   renderRegistroHoy();
   setTimeout(()=>{msg.style.display='none';},4000);
 };
 
-/* ===== REGISTRO DE HOY (en el parte diario) ===== */
+/* Muestra la observación del checklist si algún ítem quedó en mal estado */
+function revisarChecklist(){
+  const ids=['c_aceite','c_refri','c_hidr','c_neum','c_fugas','c_engrase','c_agua','c_frenos','c_direccion','c_cardan','c_luces'];
+  const hayMalo=ids.some(id=>{const el=document.getElementById(id);return el&&!el.checked;});
+  const box=document.getElementById('obsChkBox');
+  if(hayMalo)box.classList.remove('hidden');
+  else box.classList.add('hidden');
+}
 function renderRegistroHoy(){
   const cont=document.getElementById('registroHoy');
   if(!cont)return;
