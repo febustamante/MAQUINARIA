@@ -1280,7 +1280,7 @@ function horasTrabajadas(cod){
 }
 /* costo total de una máquina: combustible estimado + mantención/gastos */
 function costoTotalMaq(m){
-  return combEstimado(m)+(m.mant||0);
+  return combEstimado(m)+(m.mant||0)+fijoAcumuladoMaq(m.maq);
 }
 /* costo por hora trabajada (null si no hay horas registradas) */
 function costoPorHora(m){
@@ -1392,7 +1392,7 @@ function renderTabla(){
   tb.innerHTML=lista.map(m=>{
     const sem=semaforoMaquina(m);
     const est=combEstimado(m);
-    const totMaq=est+(m.mant||0);
+    const totMaq=costoTotalMaq(m);
     // resumen de alertas: cuántas cosas vencidas o por vencer
     const alertas=[];
     const dRT=diasHasta(m.rt_fecha), dGas=diasHasta(m.gases_fecha), pc=permisoDe(m);
@@ -1500,6 +1500,7 @@ function filaExpandida(m){
     <div class="comp-row"><span>Gases</span><span class="v">${cellDias(diasHasta(m.gases_fecha))}</span></div>
     <div class="comp-row"><span>Permiso circulación</span><span class="v"><span class="dias ${pc.nivel==='verde'?'verde':pc.nivel}">${pc.dias<0?'venc. '+Math.abs(pc.dias)+'d':pc.dias+' d'}</span></span></div>
     <div class="comp-row"><span>Costo por hora</span><span class="v">${cphVal?CLP(cphVal)+'/h':'—'}</span></div>
+    <div class="comp-row"><span>Gastos fijos acumulados</span><span class="v">${CLP(fijoAcumuladoMaq(m.maq))}</span></div>
     <div class="comp-row" style="border:none;padding-top:8px"><span></span><span class="v"><span class="edit-fecha" onclick="event.stopPropagation();abrirModalFecha('${m.maq}')">editar datos de la máquina</span></span></div>
   </div>`;
 
@@ -1526,6 +1527,21 @@ function cuotasFijo(f){
 function cargoMensualFijo(f){
   const n=(f.maquinas||[]).length||1;
   return f.monto_es==='TOTAL' ? f.monto : f.monto*n;
+}
+/* fijo ACUMULADO que le corresponde a una máquina:
+   cuotas ya pagadas (o meses transcurridos si es indefinido) × su parte */
+function fijoAcumuladoMaq(cod){
+  let total=0;
+  (DB.fijosDB||[]).filter(f=>f.activo!==false).forEach(f=>{
+    const maqs=f.maquinas||[];
+    if(!maqs.includes(cod))return;
+    const c=cuotasFijo(f);              // periodos ya transcurridos/pagados
+    const periodos=c.pagadas||0;
+    // lo que paga esta máquina por periodo
+    const porMaq = f.monto_es==='TOTAL' ? (f.monto/(maqs.length||1)) : f.monto;
+    total += porMaq*periodos;
+  });
+  return Math.round(total);
 }
 function renderFijos(){
   const fijos=DB.fijosDB.filter(f=>f.activo!==false);
