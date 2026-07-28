@@ -1056,8 +1056,25 @@ document.getElementById('btnGuardar').onclick=async()=>{
   }
   DB.partes.unshift({id:nuevoId,fecha:hoyISO(),operador:oper,maq:maq,hi:hi,ht:ht,lts:lts,
     chk:chk, obs_checklist:hayMaloChk?obsChk:null, falla:falla,desc:falla?desc:null,foto:falla?fotoData:null});
+
+  // enviar alerta por correo si hay falla o checklist en mal estado
+  if(falla || hayMaloChk){
+    const nombresChk={aceite:'Aceite motor',refri:'Refrigerante',hidr:'Hidráulico',neum:'Neumáticos',fugas:'Fugas',engrase:'Engrase',agua:'Nivel de agua',frenos:'Frenos',direccion:'Dirección',cardan:'Cardán',luces:'Luces'};
+    const itemsMalos=Object.keys(chk).filter(k=>!chk[k]).map(k=>nombresChk[k]||k).join(', ');
+    const mq=DB.maquinas.find(x=>x.maq===maq);
+    const nombreMaq=mq?(maq+' · '+mq.resp):maq;
+    fetch(SB_URL+'/functions/v1/alerta-falla',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        maquina:nombreMaq, operador:oper, fecha:hoyISO(),
+        falla:falla?desc:'', checklist:hayMaloChk?(itemsMalos+(obsChk?' — '+obsChk:'')):''
+      })
+    }).then(r=>r.json()).then(d=>console.log('alerta enviada:',d)).catch(e=>console.warn('no se pudo enviar alerta:',e));
+  }
+
   msg.className='msg ok';
-  msg.textContent='✓ Parte guardado'+(falla?'. ⚠ Se notificará al supervisor por la falla reportada.':'. Ya aparece en la máquina '+maq);
+  msg.textContent='✓ Parte guardado'+((falla||hayMaloChk)?'. ⚠ Se notificó al supervisor por correo.':'. Ya aparece en la máquina '+maq);
   ['pHi','pHt','pLts','pDesc','pOper'].forEach(id=>document.getElementById(id).value='');
   ['c_aceite','c_refri','c_hidr','c_neum','c_fugas','c_engrase','c_agua','c_frenos','c_direccion','c_cardan','c_luces'].forEach(id=>document.getElementById(id).checked=true);
   document.getElementById('obsChk').value='';document.getElementById('obsChkBox').classList.add('hidden');
