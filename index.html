@@ -232,6 +232,19 @@
     <div class="card" style="max-width:560px">
       <div id="registroHoy"></div>
     </div>
+
+    <div class="stitle">Marcar máquina sin uso hoy</div>
+    <div class="card" style="max-width:560px">
+      <p class="mini" style="margin:0 0 10px">Si una máquina no se usó hoy, márcala aquí para que no quede como pendiente.</p>
+      <div class="filtros" style="align-items:flex-end;gap:10px">
+        <div style="flex:1"><label style="margin:0 0 4px">Máquina</label>
+          <select id="suMaq"></select>
+        </div>
+        <button class="filtros-btn" onclick="marcarNoUsoDesdeParte()" style="border:1px solid var(--pizarra);background:var(--pizarra);color:#fff;padding:9px 16px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">Marcar sin uso</button>
+      </div>
+      <div id="suMsg" class="msg"></div>
+      <div id="sinUsoHoyLista" style="margin-top:10px"></div>
+    </div>
   </div>
 
   <!-- MÁQUINAS -->
@@ -624,6 +637,8 @@ function aplicarRol(){
     document.getElementById('v-parte').classList.add('act');
   }
   renderRegistroHoy();
+  initSelectSinUso();
+  renderSinUsoHoy();
 }
 document.getElementById('pinInput').addEventListener('keypress',e=>{if(e.key==='Enter')entrar();});
 function nivelDias(d){if(d===null)return null;if(d<0)return'rojo';if(d<=30)return'ambar';return'verde';}
@@ -1092,6 +1107,63 @@ function revisarChecklist(){
   if(hayMalo)box.classList.remove('hidden');
   else box.classList.add('hidden');
 }
+
+/* ===== MARCAR SIN USO desde el parte diario (operador) ===== */
+function initSelectSinUso(){
+  const sel=document.getElementById('suMaq');
+  if(!sel)return;
+  const cods=DB.paraParte.map(x=>x.maq);
+  const lista=DB.maquinas.filter(m=>cods.includes(m.maq)&&m.estado==='OPERATIVA')
+    .sort((a,b)=>a.maq.localeCompare(b.maq,undefined,{numeric:true}));
+  sel.innerHTML='<option value="">— Selecciona máquina —</option>'+
+    lista.map(m=>`<option value="${m.maq}">${m.maq} · ${m.resp}</option>`).join('');
+}
+async function marcarNoUsoDesdeParte(){
+  const cod=document.getElementById('suMaq').value;
+  const msg=document.getElementById('suMsg');
+  if(!cod){msg.className='msg err';msg.textContent='Elige una máquina';return;}
+  const hoy=hoyISO();
+  if(DB.partes.some(p=>p.maq===cod&&p.fecha===hoy)){
+    msg.className='msg err';msg.textContent='Esa máquina ya tiene parte cargado hoy.';return;
+  }
+  if(DB.sinUso.some(s=>s.maq===cod&&s.fecha===hoy)){
+    msg.className='msg err';msg.textContent='Esa máquina ya estaba marcada sin uso hoy.';return;
+  }
+  msg.className='msg';msg.textContent='Guardando...';
+  if(sb){
+    const {error}=await sb.from('maq_sin_uso').insert({maq:cod,fecha:hoy});
+    if(error && !error.message.includes('duplicate')){msg.className='msg err';msg.textContent='Error: '+error.message;return;}
+  }
+  DB.sinUso.push({maq:cod,fecha:hoy});
+  msg.className='msg ok';msg.textContent='✓ '+cod+' marcada como no usada hoy.';
+  document.getElementById('suMaq').value='';
+  renderSinUsoHoy();
+  if(typeof renderControl==='function')renderControl();
+}
+function renderSinUsoHoy(){
+  const cont=document.getElementById('sinUsoHoyLista');
+  if(!cont)return;
+  const hoy=hoyISO();
+  const hoyLista=DB.sinUso.filter(s=>s.fecha===hoy);
+  if(!hoyLista.length){cont.innerHTML='';return;}
+  cont.innerHTML='<div class="mini" style="margin-bottom:6px">Marcadas sin uso hoy:</div>'+
+    hoyLista.map(s=>{
+      const m=DB.maquinas.find(x=>x.maq===s.maq);
+      return `<span class="dias" style="display:inline-block;margin:2px 4px 2px 0;background:#eef0ef;color:var(--pizarra);padding:3px 10px;border-radius:12px">${s.maq}${m?' · '+m.resp:''} <span onclick="quitarSinUso('${s.maq}')" style="cursor:pointer;color:var(--rojo);font-weight:700">×</span></span>`;
+    }).join('');
+}
+async function quitarSinUso(cod){
+  const hoy=hoyISO();
+  if(!confirm('¿Quitar '+cod+' de las marcadas sin uso? Volverá a quedar como pendiente.'))return;
+  if(sb){
+    const {error}=await sb.from('maq_sin_uso').delete().eq('maq',cod).eq('fecha',hoy);
+    if(error){alert('Error: '+error.message);return;}
+  }
+  DB.sinUso=DB.sinUso.filter(s=>!(s.maq===cod&&s.fecha===hoy));
+  renderSinUsoHoy();
+  if(typeof renderControl==='function')renderControl();
+}
+
 function renderRegistroHoy(){
   const cont=document.getElementById('registroHoy');
   if(!cont)return;
