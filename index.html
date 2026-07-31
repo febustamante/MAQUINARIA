@@ -1012,7 +1012,7 @@ async function borrarGasto(id){
 /* PARTE DIARIO */
 document.getElementById('pMaq').innerHTML=DB.paraParte
   .sort((a,b)=>a.maq.localeCompare(b.maq,undefined,{numeric:true}))
-  .map(m=>`<option value="${m.maq}">${m.maq} · ${m.marca} ${m.modelo}${m.patente?' · '+m.patente:''} · ${m.comb_tipo||''}</option>`).join('');
+  .map(m=>`<option value="${m.maq}">${m.maq} · ${m.marca} ${m.modelo}${m.patente?' · '+m.patente:''}</option>`).join('');
 // cambiar etiqueta horómetro/kilómetro según la máquina elegida
 function actualizarLabelParte(){
   const cod=document.getElementById('pMaq').value;
