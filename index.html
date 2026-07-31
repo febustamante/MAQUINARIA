@@ -1112,8 +1112,9 @@ function revisarChecklist(){
 function initSelectSinUso(){
   const sel=document.getElementById('suMaq');
   if(!sel)return;
+  // todas las que cargan parte (no filtrar por estado, para que ninguna desaparezca)
   const cods=DB.paraParte.map(x=>x.maq);
-  const lista=DB.maquinas.filter(m=>cods.includes(m.maq)&&m.estado==='OPERATIVA')
+  const lista=DB.maquinas.filter(m=>cods.includes(m.maq))
     .sort((a,b)=>a.maq.localeCompare(b.maq,undefined,{numeric:true}));
   sel.innerHTML='<option value="">— Selecciona máquina —</option>'+
     lista.map(m=>`<option value="${m.maq}">${m.maq} · ${m.resp}</option>`).join('');
