@@ -189,9 +189,9 @@
       <select id="pMaq"></select>
       <label>Operador</label>
       <select id="pOper"><option value="">— Selecciona operador —</option></select>
-      <div class="grid2">
-        <div><label id="lblHi">Horómetro inicio</label><input type="number" id="pHi" inputmode="decimal" placeholder="0"></div>
-        <div><label id="lblHt">Horómetro término</label><input type="number" id="pHt" inputmode="decimal" placeholder="0"></div>
+      <div>
+        <label id="lblHi">Horómetro actual <span class="hint">(el que marca al recibir la máquina)</span></label>
+        <input type="number" id="pHi" inputmode="decimal" placeholder="0">
       </div>
       <label>Combustible cargado <span class="hint">(litros reales, si se midió)</span></label>
       <input type="number" id="pLts" inputmode="decimal" placeholder="dejar vacío si no se midió">
@@ -365,9 +365,8 @@
   <div class="modal">
     <h3>Editar parte</h3>
     <div class="msub" id="epSub"></div>
-    <div class="grid2">
-      <div><label>Horómetro inicio</label><input type="number" id="epHi"></div>
-      <div><label>Horómetro término</label><input type="number" id="epHt"></div>
+    <div>
+      <label>Horómetro / km al recibir</label><input type="number" id="epHi">
     </div>
     <label>Litros cargados</label>
     <input type="number" id="epLts" placeholder="vacío si no se midió">
@@ -526,6 +525,7 @@ async function cargarPartesSupabase(){
     if(!data) return false;
     DB.partes=data.map(p=>({
       id:p.id, maq:p.maq, fecha:p.fecha, operador:p.operador,
+      creado:p.created_at||p.creado_en||null,
       hi:p.horo_inicio!=null?Number(p.horo_inicio):null,
       ht:p.horo_termino!=null?Number(p.horo_termino):null,
       lts:p.litros!=null?Number(p.litros):null,
@@ -1018,8 +1018,7 @@ function actualizarLabelParte(){
   const cod=document.getElementById('pMaq').value;
   const m=DB.paraParte.find(x=>x.maq===cod);
   const porKm=m&&m.porKm;
-  document.getElementById('lblHi').textContent=porKm?'Kilómetro inicio':'Horómetro inicio';
-  document.getElementById('lblHt').textContent=porKm?'Kilómetro término':'Horómetro término';
+  document.getElementById('lblHi').innerHTML=(porKm?'Kilómetro actual':'Horómetro actual')+' <span class="hint">(el que marca al recibir la máquina)</span>';
 }
 document.getElementById('pMaq').onchange=actualizarLabelParte;
 actualizarLabelParte();
@@ -1036,17 +1035,19 @@ document.getElementById('pFoto').onchange=e=>{
 document.getElementById('btnGuardar').onclick=async()=>{
   const msg=document.getElementById('msgParte');
   const maq=document.getElementById('pMaq').value, oper=document.getElementById('pOper').value.trim();
-  const hi=parseFloat(document.getElementById('pHi').value), ht=parseFloat(document.getElementById('pHt').value);
+  const hi=parseFloat(document.getElementById('pHi').value);
   const ltsRaw=document.getElementById('pLts').value.trim();
   const lts=ltsRaw===''?null:parseFloat(ltsRaw);
   const falla=document.getElementById('pFalla').checked, desc=document.getElementById('pDesc').value.trim();
+  const esKm=(DB.paraParte.find(x=>x.maq===maq)||{}).porKm;
+  const unidad=esKm?'km':'h';
+  if(!maq){msg.className='msg err';msg.textContent='Elige una máquina';return;}
   if(!oper){msg.className='msg err';msg.textContent='Indica el operador';return;}
-  if(isNaN(hi)||isNaN(ht)){msg.className='msg err';msg.textContent='Ingresa horómetro de inicio y término';return;}
-  if(ht<hi){msg.className='msg err';msg.textContent='El horómetro de término no puede ser menor al de inicio';return;}
+  if(isNaN(hi)){msg.className='msg err';msg.textContent='Ingresa el '+(esKm?'kilometraje':'horómetro')+' actual';return;}
   const ultHoro=horometroActual(maq);
   if(ultHoro!==null && hi<ultHoro){
     msg.className='msg err';
-    msg.textContent='El horómetro de inicio ('+fmt(hi)+' h) es menor al último registrado de '+maq+' ('+fmt(ultHoro)+' h). Revisa el dato.';
+    msg.textContent='El '+(esKm?'kilometraje':'horómetro')+' ('+fmt(hi)+' '+unidad+') es menor al último registrado de '+maq+' ('+fmt(ultHoro)+' '+unidad+'). Revisa el dato.';
     return;
   }
   if(falla&&!desc){msg.className='msg err';msg.textContent='Describe la falla antes de guardar';return;}
@@ -1060,7 +1061,7 @@ document.getElementById('btnGuardar').onclick=async()=>{
   let nuevoId=Date.now();
   if(sb){
     const {data,error}=await sb.from('maq_partes').insert({
-      maq:maq, fecha:hoyISO(), operador:oper, horo_inicio:hi, horo_termino:ht, litros:lts,
+      maq:maq, fecha:hoyISO(), operador:oper, horo_inicio:hi, horo_termino:null, litros:lts,
       chk_aceite:chk.aceite, chk_refri:chk.refri, chk_hidr:chk.hidr, chk_neum:chk.neum, chk_fugas:chk.fugas, chk_engrase:chk.engrase,
       chk_agua:chk.agua, chk_frenos:chk.frenos, chk_direccion:chk.direccion, chk_cardan:chk.cardan, chk_luces:chk.luces,
       obs_checklist:hayMaloChk?obsChk:null,
@@ -1069,7 +1070,7 @@ document.getElementById('btnGuardar').onclick=async()=>{
     if(error){msg.className='msg err';msg.textContent='Error al guardar: '+error.message;return;}
     if(data)nuevoId=data.id;
   }
-  DB.partes.unshift({id:nuevoId,fecha:hoyISO(),operador:oper,maq:maq,hi:hi,ht:ht,lts:lts,
+  DB.partes.unshift({id:nuevoId,fecha:hoyISO(),creado:new Date().toISOString(),operador:oper,maq:maq,hi:hi,ht:null,lts:lts,
     chk:chk, obs_checklist:hayMaloChk?obsChk:null, falla:falla,desc:falla?desc:null,foto:falla?fotoData:null});
 
   // enviar alerta por correo si hay falla o checklist en mal estado
@@ -1090,7 +1091,7 @@ document.getElementById('btnGuardar').onclick=async()=>{
 
   msg.className='msg ok';
   msg.textContent='✓ Parte guardado'+((falla||hayMaloChk)?'. ⚠ Se notificó al supervisor por correo.':'. Ya aparece en la máquina '+maq);
-  ['pHi','pHt','pLts','pDesc','pOper'].forEach(id=>document.getElementById(id).value='');
+  ['pHi','pLts','pDesc','pOper'].forEach(id=>document.getElementById(id).value='');
   ['c_aceite','c_refri','c_hidr','c_neum','c_fugas','c_engrase','c_agua','c_frenos','c_direccion','c_cardan','c_luces'].forEach(id=>document.getElementById(id).checked=true);
   document.getElementById('obsChk').value='';document.getElementById('obsChkBox').classList.add('hidden');
   document.getElementById('pFalla').checked=false;document.getElementById('fallaBox').classList.add('hidden');
@@ -1173,13 +1174,13 @@ function renderRegistroHoy(){
   const esGer=ROL==='gerencia';
   if(!deHoy.length){cont.innerHTML='<div class="no-uso">Aún no hay partes cargados hoy.</div>';return;}
   cont.innerHTML='<table class="tbl-maq" style="min-width:auto"><thead><tr>'+
-    '<th>Máquina</th><th>Operador</th><th class="num">Horas</th><th class="num">Litros</th><th>Estado</th>'+(esGer?'<th></th>':'')+'</tr></thead><tbody>'+
+    '<th>Máquina</th><th>Operador</th><th class="num">Horas/km</th><th class="num">Litros</th><th>Estado</th>'+(esGer?'<th></th>':'')+'</tr></thead><tbody>'+
     deHoy.map(p=>{
-      const h=(typeof p.ht==='number'&&typeof p.hi==='number')?(p.ht-p.hi):null;
+      const h=horasDeParte(p);
       const estado=p.falla?'<span class="falla-tag">falla</span>':'✓';
       const accion=esGer?`<td><span class="edit-fecha" onclick="editarParte('${p.id}')">editar</span></td>`:'';
       return `<tr><td><b>${p.maq}</b></td><td>${p.operador}</td>
-        <td class="num">${h!=null?h.toFixed(1):'—'}</td><td class="num">${p.lts!=null?p.lts:'—'}</td>
+        <td class="num">${h!=null?h.toFixed(1):'<span class="mini">pendiente</span>'}</td><td class="num">${p.lts!=null?p.lts:'—'}</td>
         <td>${estado}</td>${accion}</tr>`;
     }).join('')+'</tbody></table>'+
     (esGer?'':'<div class="mini" style="margin-top:8px">Si ves un error en tu registro, avisa a gerencia para corregirlo.</div>');
@@ -1191,7 +1192,6 @@ function editarParte(id){
   parteEditando=id;
   document.getElementById('epSub').textContent=p.maq+' · '+p.fecha+' · '+p.operador;
   document.getElementById('epHi').value=p.hi!=null?p.hi:'';
-  document.getElementById('epHt').value=p.ht!=null?p.ht:'';
   document.getElementById('epLts').value=p.lts!=null?p.lts:'';
   document.getElementById('epOper').value=p.operador||'';
   document.getElementById('epFalla').checked=!!p.falla;
@@ -1203,22 +1203,20 @@ async function guardarEdicionParte(){
   if(!parteEditando)return;
   const p=DB.partes.find(x=>String(x.id)===String(parteEditando));
   const hi=parseFloat(document.getElementById('epHi').value);
-  const ht=parseFloat(document.getElementById('epHt').value);
   const ltsRaw=document.getElementById('epLts').value.trim();
   const lts=ltsRaw===''?null:parseFloat(ltsRaw);
   const oper=document.getElementById('epOper').value.trim();
   const falla=document.getElementById('epFalla').checked;
   const desc=document.getElementById('epDesc').value.trim();
-  if(isNaN(hi)||isNaN(ht)){alert('Ingresa horómetro de inicio y término');return;}
-  if(ht<hi){alert('El término no puede ser menor al inicio');return;}
+  if(isNaN(hi)){alert('Ingresa el horómetro/km al recibir');return;}
   if(sb){
     const {error}=await sb.from('maq_partes').update({
-      horo_inicio:hi, horo_termino:ht, litros:lts, operador:oper,
+      horo_inicio:hi, litros:lts, operador:oper,
       falla:falla, falla_desc:falla?desc:null
     }).eq('id',p.id);
     if(error){alert('Error: '+error.message);return;}
   }
-  p.hi=hi; p.ht=ht; p.lts=lts; p.operador=oper; p.falla=falla; p.desc=falla?desc:null;
+  p.hi=hi; p.lts=lts; p.operador=oper; p.falla=falla; p.desc=falla?desc:null;
   document.getElementById('modalParte').classList.remove('act');
   parteEditando=null;
   renderRegistroHoy();
@@ -1358,15 +1356,38 @@ document.getElementById('modalFecha').onclick=e=>{if(e.target.id==='modalFecha')
 function horometroActual(cod){
   const ps=DB.partes.filter(p=>p.maq===cod);
   let max=0;
-  ps.forEach(p=>{if(typeof p.ht==='number'&&p.ht>max)max=p.ht;});
+  ps.forEach(p=>{if(typeof p.hi==='number'&&p.hi>max)max=p.hi; if(typeof p.ht==='number'&&p.ht>max)max=p.ht;});
   return max>0?max:null;
 }
-/* horas trabajadas acumuladas según los partes (término - inicio) */
+/* orden temporal de los partes de una máquina (más antiguo primero) */
+function partesOrdenados(cod){
+  return DB.partes.filter(p=>p.maq===cod).slice().sort((a,b)=>{
+    if(a.fecha!==b.fecha) return a.fecha<b.fecha?-1:1;
+    // mismo día: ordenar por hora de creación, o por id como respaldo
+    const ta=a.creado?new Date(a.creado).getTime():0, tb=b.creado?new Date(b.creado).getTime():0;
+    if(ta!==tb) return ta-tb;
+    return String(a.id).localeCompare(String(b.id),undefined,{numeric:true});
+  });
+}
+/* horas trabajadas: el "final" de cada parte = inicial del parte siguiente.
+   El último parte de cada máquina queda sin cerrar (no suma). */
 function horasTrabajadas(cod){
-  const ps=DB.partes.filter(p=>p.maq===cod);
+  const ps=partesOrdenados(cod);
   let h=0;
-  ps.forEach(p=>{if(typeof p.ht==='number'&&typeof p.hi==='number'&&p.ht>=p.hi)h+=(p.ht-p.hi);});
+  for(let i=0;i<ps.length-1;i++){   // -1: el último no se cierra
+    const ini=ps[i].hi, fin=ps[i+1].hi;   // final = inicial del siguiente
+    if(typeof ini==='number'&&typeof fin==='number'&&fin>=ini) h+=(fin-ini);
+  }
   return h;
+}
+/* horas de UN parte específico (para mostrar en el registro): inicial del siguiente - su inicial */
+function horasDeParte(p){
+  const ps=partesOrdenados(p.maq);
+  const idx=ps.findIndex(x=>String(x.id)===String(p.id));
+  if(idx<0||idx>=ps.length-1) return null;   // último o no encontrado: sin cerrar
+  const ini=ps[idx].hi, fin=ps[idx+1].hi;
+  if(typeof ini==='number'&&typeof fin==='number'&&fin>=ini) return fin-ini;
+  return null;
 }
 /* costo total de una máquina: combustible estimado + mantención/gastos */
 function costoTotalMaq(m){
@@ -1532,16 +1553,17 @@ function filaExpandida(m){
   const ps=partesDe(m.maq);
   let usoHtml;
   if(ps.length){
-    const totH=ps.reduce((s,p)=>s+(p.ht-p.hi),0);
+    const totH=horasTrabajadas(m.maq);
     const totL=ps.reduce((s,p)=>s+(p.lts||0),0);
     const lph=totH>0&&totL>0?(totL/totH):null;
     usoHtml=ps.map(p=>{
-      const h=(p.ht-p.hi);
-      const l=(p.lts&&h>0)?(p.lts/h).toFixed(1):'—';
-      const ltsTxt=p.lts?p.lts+' L · '+l+' L/h':'sin litros';
+      const h=horasDeParte(p);
+      const l=(p.lts&&h&&h>0)?(p.lts/h).toFixed(1):'—';
+      const ltsTxt=p.lts?p.lts+' L'+(l!=='—'?' · '+l+' L/h':''):'sin litros';
       const f=p.falla?` <span class="falla-tag">falla</span>`:'';
       const btnDel=` <span class="btn-borrar" onclick="event.stopPropagation();borrarParte('${p.id}')">borrar</span>`;
-      let line=`<div class="exp-line"><span class="k mini">${p.fecha} · ${p.operador}${f}${btnDel}</span><span class="v">${h.toFixed(1)} h · ${ltsTxt}</span></div>`;
+      const hTxt=h!=null?h.toFixed(1)+' h':'pendiente';
+      let line=`<div class="exp-line"><span class="k mini">${p.fecha} · ${p.operador}${f}${btnDel}</span><span class="v">${hTxt} · ${ltsTxt}</span></div>`;
       if(p.falla&&p.desc)line+=`<div class="mini" style="color:var(--rojo);padding:2px 0">↳ ${p.desc}</div>`;
       if(p.falla&&p.foto)line+=`<img class="foto-mini" src="${p.foto}" onclick="window.open('').document.write('<img src=\\''+this.src+'\\' style=max-width:100%>')">`;
       return line;
