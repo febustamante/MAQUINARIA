@@ -318,6 +318,7 @@
         <div><label style="margin:0 0 4px">Desde</label><input type="date" id="fgDesde" onchange="renderGastosRecientes()" style="width:auto"></div>
         <div><label style="margin:0 0 4px">Hasta</label><input type="date" id="fgHasta" onchange="renderGastosRecientes()" style="width:auto"></div>
         <button onclick="limpiarFiltroGastos()" style="border:1px solid var(--linea);background:#fff;color:var(--pizarra);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px">Limpiar</button>
+        <button onclick="descargarGastosExcel()" style="border:1px solid var(--verde);background:var(--verde);color:#fff;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">⬇ Descargar Excel</button>
       </div>
       <div id="gastosRecientes"><div class="no-uso">Cargando gastos...</div></div>
     </div>
@@ -932,6 +933,42 @@ function limpiarFiltroGastos(){
   document.getElementById('fgDesde').value='';
   document.getElementById('fgHasta').value='';
   renderGastosRecientes();
+}
+function descargarGastosExcel(){
+  if(typeof XLSX==='undefined'){alert('No se pudo cargar el generador de Excel. Revisa tu conexión.');return;}
+  const fMaq=document.getElementById('fgMaq')?.value||'';
+  const fDesde=document.getElementById('fgDesde')?.value||'';
+  const fHasta=document.getElementById('fgHasta')?.value||'';
+  const gastos=DB.gastos.filter(g=>{
+    if(fMaq && (g.maq||g.resp)!==fMaq) return false;
+    if(fDesde && g.fecha<fDesde) return false;
+    if(fHasta && g.fecha>fHasta) return false;
+    return true;
+  });
+  const filasGastos=gastos.map(g=>({
+    'Fecha':g.fecha,'Máquina':g.maq||g.resp,'Motivo':g.motivo||'',
+    'N° Factura':g.factura||'','Monto':g.monto
+  }));
+  const totalGastos=gastos.reduce((s,g)=>s+g.monto,0);
+  filasGastos.push({'Fecha':'','Máquina':'','Motivo':'','N° Factura':'TOTAL','Monto':totalGastos});
+  const filasFijos=(DB.fijosDB||[]).map(f=>{
+    const c=cuotasFijo(f);
+    return {
+      'Concepto':f.nombre,'Monto':f.monto,
+      'Tipo':f.monto_es==='TOTAL'?'Monto total':'Por máquina',
+      'Cobro':f.tipo==='CUOTAS'?('Cuotas ('+(c.pagadas||0)+' de '+f.n_cuotas+')'):'Indefinido (mensual)',
+      'Día cobro':f.dia_cobro,'Desde':f.fecha_inicio,
+      'Máquinas':(f.maquinas||[]).join(', '),'Cargo mensual':cargoMensualFijo(f)
+    };
+  });
+  const wb=XLSX.utils.book_new();
+  const ws1=XLSX.utils.json_to_sheet(filasGastos);
+  ws1['!cols']=[{wch:12},{wch:16},{wch:28},{wch:14},{wch:14}];
+  XLSX.utils.book_append_sheet(wb,ws1,'Gastos');
+  const ws2=XLSX.utils.json_to_sheet(filasFijos);
+  ws2['!cols']=[{wch:16},{wch:12},{wch:14},{wch:22},{wch:10},{wch:12},{wch:40},{wch:14}];
+  XLSX.utils.book_append_sheet(wb,ws2,'Gastos Fijos');
+  XLSX.writeFile(wb,'Gastos_Maquinaria_'+hoyISO()+'.xlsx');
 }
 function renderGastosRecientes(){
   initFiltroGastosMaq();
